@@ -648,7 +648,7 @@ namespace Infrastructure.Services.V1
             parameters.Add("@ERROR_CODE", dbType: DbType.Int32, direction: ParameterDirection.Output);
             parameters.Add("@ERROR_MESSAGE", dbType: DbType.String, size: 500, direction: ParameterDirection.Output);
             var ResSet = await _dapperHelper.ExecuteStoredProcedureAsync("SP_INSERT_VENDOR_EXCEL_DATA", parameters);
-            if (parameters.ParameterNames.Contains("@ERROR_CODE"))
+            if (parameters.ParameterNames.Contains("ERROR_CODE"))
             {
                 int errorCode = parameters.Get<int?>("@ERROR_CODE") ?? 0;
                 if (errorCode != 0)
@@ -707,7 +707,7 @@ namespace Infrastructure.Services.V1
             parameters.Add("@ERROR_CODE", dbType: DbType.Int32, direction: ParameterDirection.Output);
             parameters.Add("@ERROR_MESSAGE", dbType: DbType.String, size: 500, direction: ParameterDirection.Output);
             var ResSet = await _dapperHelper.ExecuteStoredProcedureAsync("SP_UPDATE_CM_STATUS", parameters);
-            if (parameters.ParameterNames.Contains("@ERROR_CODE"))
+            if (parameters.ParameterNames.Contains("ERROR_CODE"))
             {
                 int errorCode = parameters.Get<int?>("@ERROR_CODE") ?? 0;
                 if (errorCode != 0)
@@ -736,7 +736,7 @@ namespace Infrastructure.Services.V1
             parameters.Add("@ERROR_CODE", dbType: DbType.Int32, direction: ParameterDirection.Output);
             parameters.Add("@ERROR_MESSAGE", dbType: DbType.String, size: 500, direction: ParameterDirection.Output);
             var ResSet = await _dapperHelper.ExecuteStoredProcedureAsync("SP_UPDATE_LINK_PO", parameters);
-            if (parameters.ParameterNames.Contains("@ERROR_CODE"))
+            if (parameters.ParameterNames.Contains("ERROR_CODE"))
             {
                 int errorCode = parameters.Get<int?>("@ERROR_CODE") ?? 0;
                 if (errorCode != 0)
@@ -877,7 +877,7 @@ namespace Infrastructure.Services.V1
             parameters.Add("@ERROR_CODE", dbType: DbType.Int32, direction: ParameterDirection.Output);
             parameters.Add("@ERROR_MESSAGE", dbType: DbType.String, size: 500, direction: ParameterDirection.Output);
             var ResSet = await _dapperHelper.ExecuteStoredProcedureAsync("SP_MASTER_HIERARCHY_CRUD", parameters);
-            if (parameters.ParameterNames.Contains("@ERROR_CODE"))
+            if (parameters.ParameterNames.Contains("ERROR_CODE"))
             {
                 int errorCode = parameters.Get<int?>("@ERROR_CODE") ?? 0;
                 if (errorCode != 0)
@@ -914,7 +914,7 @@ namespace Infrastructure.Services.V1
             parameters.Add("@ERROR_CODE", dbType: DbType.Int32, direction: ParameterDirection.Output);
             parameters.Add("@ERROR_MESSAGE", dbType: DbType.String, size: 500, direction: ParameterDirection.Output);
             var ResSet = await _dapperHelper.ExecuteStoredProcedureAsync("SP_EMAIL_LIST_CRUD", parameters);
-            if (parameters.ParameterNames.Contains("@ERROR_CODE"))
+            if (parameters.ParameterNames.Contains("ERROR_CODE"))
             {
                 int errorCode = parameters.Get<int?>("@ERROR_CODE") ?? 0;
                 if (errorCode != 0)
@@ -953,7 +953,7 @@ namespace Infrastructure.Services.V1
             parameters.Add("@ERROR_CODE", dbType: DbType.Int32, direction: ParameterDirection.Output);
             parameters.Add("@ERROR_MESSAGE", dbType: DbType.String, size: 500, direction: ParameterDirection.Output);
             var ResSet = await _dapperHelper.ExecuteStoredProcedureAsync("SP_MASTER_COLOR_CODE_CRUD", parameters);
-            if (parameters.ParameterNames.Contains("@ERROR_CODE"))
+            if (parameters.ParameterNames.Contains("ERROR_CODE"))
             {
                 int errorCode = parameters.Get<int?>("@ERROR_CODE") ?? 0;
                 if (errorCode != 0)

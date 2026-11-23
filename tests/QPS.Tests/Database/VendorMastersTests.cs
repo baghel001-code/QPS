@@ -57,13 +57,33 @@ namespace QPS.Tests.Database
             Assert.Equal("EMAIL ID ALREADY EXISTS.", p.Get<string>("@ERROR_MESSAGE"));
         }
 
-        [SqlServerFact(Skip = "Known bug: VendorService checks parameters.ParameterNames.Contains(\"@ERROR_CODE\"), but Dapper lists the names " +
-                              "without '@', so procedure errors are never passed on (responseCode stays 0). Remove this Skip once fixed.")]
+        // Regression: VendorService used to check ParameterNames.Contains("@ERROR_CODE"), but Dapper lists the names
+        // without '@', so procedure errors were never passed on and the portal showed success.
+        [SqlServerFact]
         public async Task The_service_passes_on_a_duplicate_email_error()
         {
             var res = await Vendor.AddUpdateEmailMgt(new EmailManagementDto { Action = "INSERT", EmailId = "qa.team@example.com", Name = "Duplicate", IsActive = true });
             Assert.NotEqual(0, res.responseCode);
             Assert.Equal("EMAIL ID ALREADY EXISTS.", res.responseMessage);
+        }
+
+        [SqlServerFact]
+        public async Task The_service_passes_on_an_update_of_an_unknown_email()
+        {
+            var res = await Vendor.AddUpdateEmailMgt(new EmailManagementDto { Action = "UPDATE", EmailId = "nobody@example.com", Name = "Nobody", IsActive = true });
+            Assert.NotEqual(0, res.responseCode);
+            Assert.Equal("EMAIL ID NOT FOUND.", res.responseMessage);
+        }
+
+        [SqlServerFact]
+        public async Task The_service_passes_on_a_duplicate_hierarchy_member_error()
+        {
+            var res = await Vendor.AddUpdateHierarchy(new HierarchyDto
+            {
+                Action = "INSERT", EmpCode = "H001", EmpName = "Duplicate", EmailId = "dup@example.com", RoleId = 1010, IsActive = true,
+            });
+            Assert.NotEqual(0, res.responseCode);                    // primary key violation reported by the procedure
+            Assert.Contains("PRIMARY KEY", res.responseMessage);
         }
 
         [SqlServerFact]

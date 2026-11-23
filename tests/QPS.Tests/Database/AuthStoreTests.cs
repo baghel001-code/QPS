@@ -66,12 +66,29 @@ namespace QPS.Tests.Database
             Assert.Null(r.AuthUser);
         }
 
-        [SqlServerFact(Skip = "Known bug: for a user without an auth.UserSecurity row, PRO_LOGIN_RECORD_FAILED_COUNT (and PRO_LOGIN_LOCKOUT) " +
-                              "insert a row without SecurityStamp, which is NOT NULL with no default, so a wrong password throws a SQL error. " +
-                              "Remove this Skip once the procedures set SecurityStamp (or the column gets a default).")]
+        // Regression: these two procedures used to insert auth.UserSecurity without SecurityStamp (NOT NULL), so the
+        // first wrong password / lockout of a user without a security row failed with a SQL error.
+        [SqlServerFact]
         public async Task The_first_failed_sign_in_of_a_user_without_a_security_row_is_counted()
         {
-            Assert.Equal(1, await Store.RecordFailedLoginAsync(Req("E1004", AccountType.Employee)));
+            var user = Req("E1004", AccountType.Employee);   // no seeded auth.UserSecurity row
+            Assert.Equal(1, await Store.RecordFailedLoginAsync(user));
+            Assert.Equal(2, await Store.RecordFailedLoginAsync(user));
+            Assert.False(string.IsNullOrEmpty((await Store.FindByLoginAsync(user)).USER!.SECURITYSTAMP));
+        }
+
+        [SqlServerFact]
+        public async Task A_user_without_a_security_row_can_be_locked_out()
+        {
+            var user = Req("E1005", AccountType.Employee);   // no seeded auth.UserSecurity row
+            user.untilUtc = db.Clock.GetUtcNow().AddMinutes(15);
+
+            await Store.LockOutAsync(user);
+
+            var row = (await Store.FindByLoginAsync(user)).USER!;
+            Assert.Equal(user.untilUtc, row.LOCKOUTENDUTC);
+            Assert.Equal(0, row.FAILEDLOGINCOUNT);
+            Assert.False(string.IsNullOrEmpty(row.SECURITYSTAMP));
         }
 
         [SqlServerFact]

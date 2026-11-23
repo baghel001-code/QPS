@@ -15,7 +15,7 @@ namespace QPS.Tests.Database
     /// The SQL Server tests run only when the environment variable QPS_SQLSERVER_TEST holds a connection string to a
     /// SQL Server where the login may create databases and linked servers (sysadmin on a local / CI server), e.g.
     /// <c>Server=localhost,1433;User Id=sa;Password=…</c>. Each run creates a fresh database QpsTest_&lt;random&gt;,
-    /// loads Database/test/00-test-prerequisites.sql, Database/qps.sql and Database/test/01-seed-test-data.sql,
+    /// loads Database/test/00-test-prerequisites.sql, Database/qps.sql, Database/migrations/*.sql and Database/test/01-seed-test-data.sql,
     /// and drops the database afterwards. Without the variable the tests are reported as skipped.
     /// </summary>
     public static class SqlServerTestEnv
@@ -72,8 +72,14 @@ namespace QPS.Tests.Database
                 await master.ExecuteAsync($"CREATE DATABASE [{builder.InitialCatalog}]");
 
             var root = RepoRoot();
-            foreach (var script in new[] { "Database/test/00-test-prerequisites.sql", "Database/qps.sql", "Database/test/01-seed-test-data.sql" })
-                await RunScriptAsync(Path.Combine(root, script));
+            await RunScriptAsync(Path.Combine(root, "Database/test/00-test-prerequisites.sql"));
+            await RunScriptAsync(Path.Combine(root, "Database/qps.sql"));
+            // migrations are re-runnable (CREATE OR ALTER …): applying them here checks they still run on the current schema
+            var migrations = Path.Combine(root, "Database/migrations");
+            if (Directory.Exists(migrations))
+                foreach (var m in Directory.GetFiles(migrations, "*.sql").Order(StringComparer.Ordinal))
+                    await RunScriptAsync(m);
+            await RunScriptAsync(Path.Combine(root, "Database/test/01-seed-test-data.sql"));
 
             Services = BuildServices();
         }

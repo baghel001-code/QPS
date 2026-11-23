@@ -3194,8 +3194,8 @@ BEGIN
         -- Replaces EnsureSecurityRow: create the row already locked out.
         IF @@ROWCOUNT = 0
         BEGIN
-            INSERT INTO auth.UserSecurity (UserId, AccountType, FailedLoginCount, LockoutEndUtc, UpdatedUtc)
-            VALUES (@USER_CODE, @ACCOUNT_TYPE, 0, @LOCKOUT_END_UTC, @NOW_UTC);
+            INSERT INTO auth.UserSecurity (UserId, AccountType, SecurityStamp, FailedLoginCount, LockoutEndUtc, UpdatedUtc)
+            VALUES (@USER_CODE, @ACCOUNT_TYPE, CONVERT(NVARCHAR(64), NEWID()), 0, @LOCKOUT_END_UTC, @NOW_UTC);   -- SecurityStamp is NOT NULL
         END
 
         COMMIT TRANSACTION;
@@ -3284,9 +3284,9 @@ BEGIN
 
         IF @@ROWCOUNT = 0
         BEGIN
-            INSERT INTO auth.UserSecurity (UserId, AccountType, FailedLoginCount, UpdatedUtc)
+            INSERT INTO auth.UserSecurity (UserId, AccountType, SecurityStamp, FailedLoginCount, UpdatedUtc)
             OUTPUT inserted.FailedLoginCount INTO @Result (FAILED_LOGIN_COUNT)
-            VALUES (@USER_CODE, @ACCOUNT_TYPE, 1, @NOW_UTC);
+            VALUES (@USER_CODE, @ACCOUNT_TYPE, CONVERT(NVARCHAR(64), NEWID()), 1, @NOW_UTC);   -- SecurityStamp is NOT NULL
         END
 
         COMMIT TRANSACTION;

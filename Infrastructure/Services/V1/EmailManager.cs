@@ -50,7 +50,7 @@ namespace Infrastructure.Services.V1
 
             var ResSet = await _dapperHelper.ExecuteStoredProcedureAsync("MARK_STATUS", headerParams);
 
-            if (headerParams.ParameterNames.Contains("@ERROR_CODE"))
+            if (headerParams.ParameterNames.Contains("ERROR_CODE"))
             {
                 int errorCode = headerParams.Get<int?>("@ERROR_CODE") ?? 0;
                 if (errorCode != 0)
