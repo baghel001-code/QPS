@@ -15,7 +15,7 @@
                                ID 3 V0003 Old Mills (inactive)
       Vendor test password     Qps@Test2026   (PBKDF2 hash below, same format as Application.Services.PasswordHasher)
       POs                      POID 1 4500000001 (V0001)          POID 2 4500000002 (V0002)
-      Inspection requests      INSP_ID 1 on PO 1 (completed)      INSP_ID 2 on PO 2 (requested)
+      Inspection requests      INSP_ID 1 on PO 1 (status 7 completed)   INSP_ID 2 on PO 2 (status 1 new)
       Inspections              INSPECT_ID 1 for request 1 (complete, Pass)
 */
 SET NOCOUNT ON;
@@ -37,9 +37,13 @@ INSERT INTO MASTER_PASSFAIL (PASSFAIL_ID, PASSFAIL, ACTIVE) VALUES (1, 'Pass', 1
 INSERT INTO MASTER_UNIT (UNIT_ID, UNIT, ACTIVE) VALUES (1, 'Cartons', 1), (2, 'Bags', 1), (3, 'Pieces', 1);
 INSERT INTO MASTER_INSPECTION_TYPE (INSPECTION_TYPE_ID, INSPECTION_TYPE, DESCRIPTION, ACTIVE) VALUES
  (1, 'Inline', 'Inline inspection', 1), (2, 'Final', 'Final inspection', 1), (3, 'Re-Inspection', 'Re-inspection', 1);
+-- The codes the stored procedures use (SP_SAVE_PO, SP_SAVE_INSPECTION, SP_UPDATE_POHEADER, SP_DOI_ASSIGNED_BY_QA):
+-- 7 = completed, 8 = reset by admin (counted as open), 9 = cancelled, 10 = abortive; 5 / 6 = date / inspector assigned.
 INSERT INTO INSPECTION_REQUEST_STATUS (INSP_STATUS_ID, INSP_STATUS, DESCRIPTION) VALUES
- (1, 'Requested', 'Raised by the vendor'), (2, 'Date Assigned', 'QA assigned the date'),
- (3, 'Inspector Assigned', 'Inspector assigned'), (4, 'Completed', 'Inspection completed'), (5, 'Cancelled', 'Cancelled');
+ (1, 'New', 'Raised by the vendor'), (2, 'Updated', 'Changed by the vendor'),
+ (5, 'Date Assigned', 'QA assigned the date of inspection'), (6, 'Inspector Assigned', 'Inspector assigned'),
+ (7, 'Completed', 'Inspection completed'), (8, 'Reset by Admin', 'Completed report re-opened by Admin'),
+ (9, 'Cancelled', 'Cancelled'), (10, 'Abortive', 'Inspection could not be carried out');
 INSERT INTO QPS_STATUS (STATUS, DESCRIPTION) VALUES ('Pending', 'Waiting for approval'), ('Approved', 'Approved'), ('Rejected', 'Rejected');
 INSERT INTO MASTER_APPROVE_REJECT (ID, STATUS, DESCRIPTION) VALUES (1, 'Approved', 'Approved'), (2, 'Rejected', 'Rejected');
 INSERT INTO MASTER_AQL (BATCH_SIZE_MIN, BATCH_SIZE_MAX, SAMPLE_SIZE, AQL_2_5_MAJOR, AQL_2_5_MINOR) VALUES
@@ -144,7 +148,7 @@ INSERT INTO PODETAIL (POID, LINE_ITEM, ARTICLE, ARTICLE_DESC, PREPACK_QTY, PURCH
 SET IDENTITY_INSERT INSPECTION_REQUESTS ON;
 INSERT INTO INSPECTION_REQUESTS (INSP_ID, POID, OFFERED_QTY, DATE_OF_INSPECTION, ADDRESS_ID, CREATED_ON, CREATED_BY, REGION_ID, QA_ASSIGNED_DOI,
                                  INSPECTOR_EMP_CODE, IS_DATE_ASSIGNED_BY_QA, IS_INSPECTOR_ASSIGNED, STATUS_CODE, INSPECTION_TYPE_ID, INSPECTION_NO, IS_QC_AT_DC) VALUES
- (1, 1, 1200, '2026-11-05', 1, @Now, 1, 1, '2026-11-05', 'E1002', 1, 1, 4, 2, 'INS-2026-0001', 0),
+ (1, 1, 1200, '2026-11-05', 1, @Now, 1, 1, '2026-11-05', 'E1002', 1, 1, 7, 2, 'INS-2026-0001', 0),   -- 7 = completed
  (2, 2,  800, '2026-11-20', 3, @Now, 2, 2, NULL,         NULL,    0, 0, 1, 1, 'INS-2026-0002', 0);
 SET IDENTITY_INSERT INSPECTION_REQUESTS OFF;
 
