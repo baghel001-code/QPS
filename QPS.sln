@@ -17,6 +17,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PDFKit", "PDFKit\PDFKit.csp
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Minimapper", "Minimapper\Minimapper.csproj", "{06849563-70E8-4C8D-BFC4-50B3383C5366}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{EFBBB9C7-EE60-47DD-BD4E-6F3CACFC931A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QPS.Tests", "tests\QPS.Tests\QPS.Tests.csproj", "{4B8A9970-4205-4E8D-AD65-0AA56347CA27}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -51,11 +55,18 @@ Global
 		{06849563-70E8-4C8D-BFC4-50B3383C5366}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{06849563-70E8-4C8D-BFC4-50B3383C5366}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{06849563-70E8-4C8D-BFC4-50B3383C5366}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4B8A9970-4205-4E8D-AD65-0AA56347CA27}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4B8A9970-4205-4E8D-AD65-0AA56347CA27}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4B8A9970-4205-4E8D-AD65-0AA56347CA27}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4B8A9970-4205-4E8D-AD65-0AA56347CA27}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {3DCF35B5-AAD5-4A47-8592-3F81C2CCB86A}
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{4B8A9970-4205-4E8D-AD65-0AA56347CA27} = {EFBBB9C7-EE60-47DD-BD4E-6F3CACFC931A}
 	EndGlobalSection
 EndGlobal
