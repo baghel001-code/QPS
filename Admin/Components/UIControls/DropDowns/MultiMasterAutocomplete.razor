@@ -1,0 +1,75 @@
+﻿<div class="multi-master-autocomplete mb-1">
+    <MudAutocomplete T="MasterData"
+                     Label="@Label"
+                     Value="_inputValue"
+                     ValueChanged="OnValueChanged"
+                     SearchFunc="Search"
+                     ToStringFunc="@(v => v?.Master_Name)"
+                     ResetValueOnEmptyText="true"
+                     CoerceText="false"
+                     Clearable="false"
+                     @ref="_autocomplete" />
+
+    @if (SelectedItems.Any())
+    {
+        <MudChipSet T="MasterData" Class="mt-1" AllClosable="true" OnClose="@(chip => RemoveItem((MasterData)chip.Tag!))">
+            @foreach (var item in SelectedItems)
+            {
+                <MudChip Text="@item.Master_Name" Tag="item" Size="Size.Small" />
+            }
+        </MudChipSet>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter, EditorRequired] public List<MasterData> SelectedItems { get; set; } = new();
+    [Parameter] public EventCallback<List<MasterData>> SelectedItemsChanged { get; set; }
+    [Parameter, EditorRequired] public Func<string, Task<IEnumerable<MasterData>>> SearchFunc { get; set; } = default!;
+
+    private MasterData? _inputValue;
+    private MudAutocomplete<MasterData> _autocomplete = default!;
+
+    private async Task<IEnumerable<MasterData>> Search(string value, CancellationToken token)
+    {
+        var results = (await SearchFunc(value)).ToList();
+
+        // Auto-select when the typed text is an exact match to an item name
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            var exact = results.FirstOrDefault(r =>string.Equals(r.Master_Name, value, StringComparison.OrdinalIgnoreCase));
+
+            if (exact != null && !SelectedItems.Any(s => s.String_ID == exact.String_ID))
+            {
+                await AddItem(exact);
+            }
+        }
+
+        // Don't show items already selected
+        return results.Where(r => !SelectedItems.Any(s => s.String_ID == r.String_ID));
+    }
+
+    private async Task OnValueChanged(MasterData? item)
+    {
+        if (item is not null)
+            await AddItem(item);
+    }
+
+    private async Task AddItem(MasterData item)
+    {
+        if (!SelectedItems.Any(s => s.String_ID == item.String_ID))
+        {
+            SelectedItems.Add(item);
+            await SelectedItemsChanged.InvokeAsync(SelectedItems);
+        }
+
+        _inputValue = null;
+        await _autocomplete.ClearAsync();
+    }
+
+    private async Task RemoveItem(MasterData item)
+    {
+        SelectedItems.Remove(item);
+        await SelectedItemsChanged.InvokeAsync(SelectedItems);
+    }
+}

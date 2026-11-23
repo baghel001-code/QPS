@@ -1,0 +1,277 @@
+﻿@inherits QpsPageBase
+@page "/Vendor-Master"
+@using Admin.Components.Pages.UserMaster
+@using Admin.Components.UIControls.BaseComponents
+@using Application.Interfaces.V1.Notifications
+@using Application.Notifications
+@using EmailService.Models
+@inject INotifier<VendorAccountModel> VendorAccountNotifier
+@attribute [Authorize(Policy = "VendorMgtAccess")]
+<MudGrid Class="justify-end">
+    <MudItem>
+        <MudBreadcrumbs Items="_items">
+            <ItemTemplate Context="item">
+                <MudLink Href="@item.Href">@item.Text.ToUpper()</MudLink>
+            </ItemTemplate>
+        </MudBreadcrumbs>
+    </MudItem>
+</MudGrid>
+<MudStack Row="true" AlignItems="AlignItems.End" Justify="Justify.FlexEnd" Class="mb-2">
+    <MudTooltip Text="Vendor onboard excel upload.">
+        <MudButton OnClick="OpenUploadDialog" StartIcon="@Icons.Material.Filled.UploadFile" Variant="Variant.Filled" Color="Color.Success">
+            Upload an Excel file
+        </MudButton>
+    </MudTooltip>
+    <MudButton OnClick="() => OpenRoleDialog()" StartIcon="@Icons.Material.Filled.Add" Variant="Variant.Filled" Color="Color.Secondary">
+        Add New Vendor
+    </MudButton>
+</MudStack>
+<MudTable Items="filteredVendor" @ref="mudTable" Dense="true">
+    <ToolBarContent>
+        <MudSpacer />
+        <MudTextField T="string" Value="@searchQuery" ValueChanged="OnSearchChanged" Placeholder="Search" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>Vendor Code</MudTh>
+        <MudTh>Vendor Name</MudTh>
+        <MudTh>GST No.</MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh>Email</MudTh>
+        <MudTh>Created By</MudTh>
+        <MudTh>Created At</MudTh>
+        <MudTh>Actions</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.VendorCode</MudTd>
+        <MudTd>@(context.VendorName)</MudTd>
+        <MudTd>@(context.GSTNo)</MudTd>
+        <MudTd>
+            <MudChip T="string" Color="@(context.IsActive? Color.Info: Color.Warning)">
+                @(context.IsActive ? "Active" : "Inactive")
+            </MudChip>
+        </MudTd>
+        <MudTd>
+            <MudChip T="string" Color="@(context.IsSentEmail? Color.Success: (context.IsActive ? Color.Error : Color.Surface))" OnClick="() => OpenSentMail(context)">
+                @(context.IsSentEmail ? "Sent" : "Not Sent")
+            </MudChip>
+        </MudTd>
+        <MudTd>@(context.CreatedByName)</MudTd>
+        <MudTd>@(context.CreatedDate)</MudTd>
+        <MudTd>
+            <MudButton OnClick="() => OpenRoleDialog(context)" StartIcon="@Icons.Material.Filled.Edit" Color="Color.Secondary" Variant="Variant.Text" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>No matching records found</MudText>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading...</MudText>
+    </LoadingContent>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="@pageSizeOptions" />
+    </PagerContent>
+</MudTable>
+
+
+
+@code {
+    private SelectListReq selectListReq = new();
+    private List<Vendor> filteredVendor = new();
+    private List<Vendor> pagedVendors = new(); // Users to be shown on the current page
+    private MudTable<Vendor> mudTable;
+    private string searchQuery = string.Empty;
+    private int pageSize => 50; // Items per page
+    private int[] pageSizeOptions => new[]
+    {
+        pageSize * 1,
+        pageSize * 2,
+        pageSize * 3,
+        pageSize * 4,
+        pageSize * 5
+    };
+    private int currentPage = 0; // Current page index
+    private Modules modules;
+    private List<BreadcrumbItem> _items = new List<BreadcrumbItem>
+    {
+        new BreadcrumbItem("Home", href: "/V1/Login2BsrAccount"),
+        new BreadcrumbItem("Vendor List", href: "#", disabled: true)
+    };
+
+    protected override async Task OnUserInitializedAsync()
+    {
+        await GetVendors();
+    }
+    private async Task GetVendors()
+    {
+        pagedVendors = new();
+        selectListReq.Id = 0;
+        selectListReq.Cmd = CmdNames.Get_All_Vendors;
+        var res = await ApiMasterService.CallingAPI<GetAllVendors, SelectListReq>(AllApiNames.GET_ALL_VENDORS, selectListReq);
+        if (res.responseCode == 0)
+        {
+            if (res.VendorsList == null)
+            {
+                Snackbar.Add("No record found.", Severity.Error);
+            }
+            else
+            {
+                foreach (var vendor in res.VendorsList)
+                {
+                    pagedVendors.Add(mapper.Map<Vendor>(vendor));
+                }
+            }
+        }
+        else
+        {
+            Snackbar.Add(res.responseMessage!, Severity.Error);
+        }
+
+        filteredVendor = pagedVendors;
+        // ApplyPaging(); // Apply pagination to the full list
+    }
+    private void OnSearchChanged(string searchQuery)
+    {
+        this.searchQuery = searchQuery;
+        FilterRoles(); // Apply search filter
+    }
+    private void FilterRoles()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            filteredVendor = pagedVendors; // Show all Users if search is empty
+        }
+        else
+        {
+            filteredVendor = pagedVendors
+                .Where(role => role.VendorCode!.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                       role.VendorName!.ToString().Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                       role.VendorAddresses.Any()!.ToString().Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            ApplyPaging(); // Re-apply pagination after search
+        }
+    }
+    private void ApplyPaging()
+    {
+        var startIndex = currentPage * pageSize;
+        filteredVendor = filteredVendor.Skip(startIndex).Take(pageSize).ToList(); // Paginate the filtered Users
+    }
+    private void OnPageChanged(int newPage)
+    {
+        currentPage = newPage;
+        ApplyPaging(); // Update paged users when the page is changed
+    }
+    private async Task OpenRoleDialog(Vendor? user = null)
+    {
+        if (user != null)
+        {
+            selectListReq.Id = user!.VendorId;
+            selectListReq.Cmd = CmdNames.Get_Vendor_Address;
+            var res = await ApiMasterService.CallingAPI<GetAddressByVendorCode, SelectListReq>(AllApiNames.GET_VENDOR_ADDRESS, selectListReq);
+            if (res.responseCode == 0 && res.responseMessage!.ToUpper() == "SUCCESS")
+            {
+                user.VendorGUId = Guid.NewGuid();
+                user.VendorAddresses.Clear();
+                foreach (var addrss in res.AddressList)
+                {
+                    var vadd = mapper.Map<VendorAddressDetail>(addrss);
+                    vadd.AddressGUId = Guid.NewGuid();
+                    user.VendorAddresses.Add(vadd);
+                }
+
+            }
+        }
+
+        var parameters = new DialogParameters
+        {
+            { "_vendor",  user  },
+            { "IsEditMode", user != null }
+        };
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Large, FullWidth = true };
+
+        var dialog = DialogService.Show<VendorMasterDialog>("Vendor Details", parameters, options);
+
+        var result = await dialog.Result;
+        if (!result!.Canceled)
+        {
+
+            await GetVendors();
+        }
+    }
+    private async Task OpenUploadDialog()
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<UploadVendorData>("File Upload Dialog", options);
+        var res = await dialog.Result;
+        await GetVendors();
+    }
+    private async Task ShowErrorDialog(string message)
+    {
+        await DialogService.ShowMessageBox(title: "Error", markupMessage: (MarkupString)message, yesText: "OK");
+    }
+
+    private async Task OpenSentMail(Vendor? user = null)
+    {
+        if (user != null)
+        {
+            if (user.IsActive)
+            {
+                var resAdd = await DialogService.ShowMessageBox(title: "Confirmation!", markupMessage: (MarkupString)"Do you want to send mail?", yesText: "Yes", noText: "No");
+                if (resAdd.Value)
+                {
+                    selectListReq.Id = user!.VendorId;
+                    selectListReq.Cmd = CmdNames.Get_Vendor_Address;
+                    var res = await ApiMasterService.CallingAPI<GetAddressByVendorCode, SelectListReq>(AllApiNames.GET_VENDOR_ADDRESS, selectListReq);
+                    if (res.responseCode == 0 && res.responseMessage!.ToUpper() == "SUCCESS")
+                    {
+                        user.VendorGUId = Guid.NewGuid();
+                        user.VendorAddresses.Clear();
+                        foreach (var addrss in res.AddressList)
+                        {
+                            var vadd = mapper.Map<VendorAddressDetail>(addrss);
+                            vadd.AddressGUId = Guid.NewGuid();
+                            user.VendorAddresses.Add(vadd);
+                        }
+
+                    }
+
+                    if (user.IsActive)
+                    {
+                        //--Email Sending start
+                        user.CreatedBy = _CurrentUser.UserId;
+
+                        var randomPassword = _passwordHasher.GenerateRandomPassword(8);
+                        user.PassWord = _passwordHasher.HashPassword(randomPassword);
+
+                        bool sent = await VendorAccountNotifier.NotifyAsync(new VendorAccountModel(user, randomPassword, IsUpdate: false));
+                        user.IsSentEmail = sent;
+
+                        //--Email Sending End
+                    }
+
+                    var res1 = await ApiMasterService.CallingAPI<GenRes, Vendor>(AllApiNames.SET_VENDOR!, user);
+                    if (res1.responseCode.Equals(0))
+                    {
+                        Snackbar.Add("Email sent and status saved successfully.", Severity.Success);
+                        await GetVendors();
+                        StateHasChanged();
+                    }
+                    else
+                    {
+                        await DialogService.ShowMessageBox(title: "Error!", markupMessage: (MarkupString)res1.responseMessage!, yesText: "OK");
+                    }
+
+                }
+            }
+        }
+
+    }
+}
+<style>
+    .mud-table-container {
+        max-height: 48vh;
+    }
+</style>
+
+

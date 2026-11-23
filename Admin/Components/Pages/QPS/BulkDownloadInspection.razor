@@ -1,0 +1,260 @@
+﻿@page "/bulk-download"
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+@attribute [Authorize]
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+
+    <MudPaper Elevation="2" Class="pa-4 mb-4">
+        <div class="d-flex align-center justify-space-between flex-wrap ga-4">
+            <div>
+                <MudText Typo="Typo.h5">Bulk PDF Download</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    @_allInspections.Count total inspections found
+                </MudText>
+            </div>
+
+            <div class="d-flex align-center ga-3">
+                <MudSelect T="int" Value="_batchSize" ValueChanged="OnBatchSizeChanged"
+                           Label="Batch size" Variant="Variant.Outlined" Dense="true"
+                           Style="min-width: 130px;">
+                    <MudSelectItem Value="50">50 per batch</MudSelectItem>
+                    <MudSelectItem Value="100">100 per batch</MudSelectItem>
+                </MudSelect>
+
+                <MudChip T="string" Color="Color.Success" Variant="Variant.Filled" Icon="@Icons.Material.Filled.CheckCircle">
+                    Downloaded: @_totalDownloaded
+                </MudChip>
+                <MudChip T="string" Color="Color.Warning" Variant="Variant.Filled" Icon="@Icons.Material.Filled.PendingActions">
+                    Remaining: @(_allInspections.Count - _totalDownloaded)
+                </MudChip>
+            </div>
+        </div>
+
+        @if (_totalDownloaded > 0)
+        {
+            <MudProgressLinear Color="Color.Success" Class="mt-3"
+                               Value="@((double)_totalDownloaded / Math.Max(_allInspections.Count, 1) * 100)" />
+        }
+    </MudPaper>
+
+    <MudGrid>
+        @for (int i = 0; i < _batches.Count; i++)
+        {
+            var batchIndex = i;
+            var batch = _batches[batchIndex];
+            var state = _batchStates[batchIndex];
+
+            <MudItem xs="12" md="6" lg="4">
+                <MudCard Outlined="true" Class="@(state.IsComplete ? "border-success" : "")">
+                    <MudCardContent>
+                        <div class="d-flex align-center justify-space-between">
+                            <MudText Typo="Typo.h6">
+                                Batch @(batchIndex + 1)
+                            </MudText>
+                            @if (state.IsComplete)
+                            {
+                                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" />
+                            }
+                        </div>
+
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+                            Inspections @(batchIndex* _batchSize + 1)–@(batchIndex* _batchSize + batch.Count)
+                            (@batch.Count reports)
+                        </MudText>
+
+                        @if (state.IsDownloading)
+                        {
+                            <MudProgressLinear Color="Color.Primary" Class="my-2"
+                                               Value="@((double)state.Completed / batch.Count * 100)" />
+                            <MudText Typo="Typo.caption">
+                                @state.Completed / @batch.Count downloaded...
+                            </MudText>
+                        }
+                        else if (state.HasErrors)
+                        {
+                            <MudAlert Severity="Severity.Warning" Dense="true" Class="my-2">
+                                @state.Completed / @batch.Count succeeded, @state.Failed failed
+                            </MudAlert>
+                        }
+                    </MudCardContent>
+
+                    <MudCardActions>
+                        <MudButton Variant="Variant.Filled"
+                                   Color="@(state.IsComplete ? Color.Success : Color.Primary)"
+                                   Disabled="@(state.IsDownloading)"
+                                   FullWidth="true"
+                                   StartIcon="@(state.IsComplete ? Icons.Material.Filled.Refresh : Icons.Material.Filled.Download)"
+                                   OnClick="@(() => DownloadBatch(batchIndex))">
+                            @if (state.IsDownloading)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                <span>Downloading...</span>
+                            }
+                            else if (state.IsComplete)
+                            {
+                                <span>Re-download</span>
+                            }
+                            else
+                            {
+                                <span>Download Batch @(batchIndex + 1)</span>
+                            }
+                        </MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+
+</MudContainer>
+
+<style>
+    .border-success {
+        border-color: var(--mud-palette-success) !important;
+    }
+</style>
+
+@code {
+    [Inject] protected IFetchMasterList _fetchMasterList { get; set; } = default!;
+    private List<MasterData> _allInspections = new();
+    private List<List<MasterData>> _batches = new();
+    private List<BatchState> _batchStates = new();
+    private int _batchSize = 50;
+    private int _totalDownloaded = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load your full filtered/searched inspection list here —
+        // e.g. from the same search results already on the main grid.
+        _allInspections = await GetMasterData();
+        RebuildBatches();
+    }
+
+    private async Task<List<MasterData>> GetMasterData()
+    {
+        SelectListReq selectRequest = new SelectListReq
+        {
+            Id = 0,
+            Cmd = "BULKINSPECITON",
+            StrField = ""
+        };
+        var result = (await _fetchMasterList.FetchMasterList("BULKINSPECITON")).masterDataList;
+        return result;
+       
+    }
+
+    private void RebuildBatches()
+    {
+        _batches = _allInspections
+            .Select((item, index) => new { item, index })
+            .GroupBy(x => x.index / _batchSize)
+            .Select(g => g.Select(x => x.item).ToList())
+            .ToList();
+
+        _batchStates = _batches.Select(b => new BatchState { Total = b.Count }).ToList();
+        _totalDownloaded = 0;
+    }
+
+    private void OnBatchSizeChanged(int newSize)
+    {
+        _batchSize = newSize;
+        RebuildBatches();
+    }
+
+    private async Task DownloadBatch(int batchIndex)
+    {
+        var batch = _batches[batchIndex];
+        var state = _batchStates[batchIndex];
+
+        state.IsDownloading = true;
+        state.Completed = 0;
+        state.Failed = 0;
+        state.HasErrors = false;
+        StateHasChanged();
+
+        var semaphore = new SemaphoreSlim(6);      // bounds server-side PDF generation
+        var downloadLock = new SemaphoreSlim(1);   // serializes browser download triggers
+
+        var tasks = batch.Select(async inspection =>
+        {
+            await semaphore.WaitAsync();
+            byte[]? pdfBytes = null;
+            string fileName = $"InspectionReport_{inspection.Master_ID}.pdf";
+            bool success = false;
+
+            try
+            {
+                var selectRequest = new SelectListReq
+                {
+                    Id = inspection.Master_ID,
+                    Cmd = CmdNames.Get_Inspection_Report_Pdf,
+                    StrField = "PASS-FAIL"
+                };
+
+                var result = await ApiMasterService.CallingAPI<string, SelectListReq>(AllApiNames.GET_INSPECTION_PDF!, selectRequest);
+
+                if (!string.IsNullOrEmpty(result))
+                {
+                    pdfBytes = Convert.FromBase64String(result);
+                    fileName = $"InspectionReport_{inspection.Master_Name}.pdf";
+                    success = true;
+                }
+            }
+            catch
+            {
+                success = false;
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+
+            if (success && pdfBytes != null)
+            {
+                await downloadLock.WaitAsync();
+                try
+                {
+                    await JS.InvokeVoidAsync("downloadBase64Pdf", Convert.ToBase64String(pdfBytes), fileName);
+                    await Task.Delay(200); // small gap between triggered downloads
+                }
+                finally
+                {
+                    downloadLock.Release();
+                }
+            }
+
+            if (success) Interlocked.Increment(ref state.Completed);
+            else Interlocked.Increment(ref state.Failed);
+
+            await InvokeAsync(StateHasChanged);
+        });
+
+        await Task.WhenAll(tasks);
+
+        state.IsDownloading = false;
+        state.HasErrors = state.Failed > 0;
+        _totalDownloaded += state.Completed;
+        StateHasChanged();
+
+        if (state.HasErrors)
+            Snackbar.Add($"Batch {batchIndex + 1}: {state.Completed} succeeded, {state.Failed} failed", Severity.Warning);
+        else
+            Snackbar.Add($"Batch {batchIndex + 1} complete — {state.Completed} reports downloaded", Severity.Success);
+    }
+
+    private class BatchState
+    {
+        public int Total;
+        public int Completed;
+        public int Failed;
+        public bool IsDownloading;
+        public bool HasErrors;
+        public bool IsComplete => !IsDownloading && Completed == Total && Total > 0;
+    }
+
+    private class InspectionListItem
+    {
+        public int InspectId { get; set; }
+        public string InspectionReportNo { get; set; } = "";
+
+    }
+}

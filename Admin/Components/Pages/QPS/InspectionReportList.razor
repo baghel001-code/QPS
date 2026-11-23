@@ -1,0 +1,167 @@
+﻿@inherits InspectionListPageBase
+@page "/InspectionsReportNew"
+@using Admin.Components.Shared
+@using Admin.Components.UIControls
+@using System.Security.Claims
+@using Admin.Components.UIControls.BaseComponents
+@using Admin.Components.UIControls.SearchFilters
+@using ClosedXML.Excel
+@attribute [Authorize]
+<MudGrid Class="justify-end">
+    <MudItem>
+        <MudBreadcrumbs Items="_items">
+            <ItemTemplate Context="item">
+                <MudLink Href="@item.Href">@item.Text.ToUpper()</MudLink>
+            </ItemTemplate>
+        </MudBreadcrumbs>
+    </MudItem>
+</MudGrid>
+
+
+<MudButton OnClick="() => ExportToExcel()" StartIcon="@Icons.Material.Filled.Edit" Color="Color.Secondary" Variant="Variant.Text">Export to Excel</MudButton>
+<InspectionSearchBarFilterableMultiSelection Filter="_filter" OnSearch="HandleSearchMultiSelect" IsInspectorDisabled="_CurrentUser.IsVendor" />
+<MudSpacer></MudSpacer>
+<MudTable Items="filteredPO" @ref="mudTable" Dense="true" FixedHeader="true" Height="700px" Loading="@IsLoading" RowsPerPage="@_filter.PageSize">
+    <HeaderContent>
+        @if (_CurrentUser.IsQAAdmin || _CurrentUser.IsQAM || _CurrentUser.IsBuyer)
+        {
+            <MudTh>ACTION</MudTh>
+        }
+
+        <MudTh>INSPECTION #</MudTh>
+        <MudTh>PO NUMBER</MudTh>
+        <MudTh>STATUS</MudTh>
+        <MudTh>BUYER</MudTh>
+        <MudTh>INSPECTOR</MudTh>
+        <MudTh>VENDOR</MudTh>
+        <MudTh>CATEGORY</MudTh>
+        <MudTh>PRODUCT</MudTh>
+        <MudTh>COLOR</MudTh>
+        <MudTh>MRP</MudTh>
+        <MudTh>FABRIC</MudTh>
+        <MudTh>OFFERED QTY.</MudTh>
+        <MudTh>TOTAL QTY.</MudTh>
+        <MudTh>DATE OF INSPECTION</MudTh>
+        <MudTh>DATE ASSIGNED BY QAM</MudTh>
+        <MudTh>INSPECTION LOCATION</MudTh>
+        <MudTh>CREATED AT</MudTh>
+
+    </HeaderContent>
+    <RowTemplate>
+        @if (_CurrentUser.IsQAAdmin || _CurrentUser.IsQAM)
+        {
+            <MudTd>
+                @if (context.INSPECTOR_EMP_CODE.ToString() != _CurrentUser.UserCode)
+                {
+                    <MudChip T="string" OnClick="() => UpdateInspectionDialog(context)" Variant="Variant.Filled" Color="Color.Primary">Update</MudChip>
+                    <MudChip T="string" OnClick="() => ASNRequestDialog(context)" Variant="Variant.Filled" Color="Color.Success">ASN Request</MudChip>
+                }
+            </MudTd>
+        }
+        @if (_CurrentUser.IsBuyer)
+        {
+            <MudTd>
+                <MudChip T="string" OnClick="() => ASNRequestDialog(context)" Variant="Variant.Filled" Color="Color.Primary">ASN Request</MudChip>
+            </MudTd>
+        }
+        <MudTd>
+            <MudChip T="string" OnClick="() => ViewReport(context)" Variant="Variant.Outlined" Color="@(context.INSP_RESULT.Trim().ToUpper() == "PASS" ? Color.Success : Color.Secondary)"> @(context.INSPECTION_REPORT_NO)  </MudChip>
+        </MudTd>
+        <MudTd>
+            @if (_CurrentUser.IsQAAdmin || _CurrentUser.IsQAM)
+            {
+                <MudChip T="string" OnClick="() => UpdateLinkPO(context)" Variant="Variant.Outlined" Color="Color.Warning"> @(context.PO_NUMBER_WITH_LINK_PO_NUMBER)  </MudChip>
+            }
+            else
+            {
+                <MudChip T="string" Variant="Variant.Outlined" Color="Color.Primary"> @(context.PO_NUMBER_WITH_LINK_PO_NUMBER)  </MudChip>
+            }
+
+        </MudTd>
+        <MudTd>@(context.INSP_RESULT)</MudTd>
+        <MudTd>@(context.BUYER_NAME)</MudTd>
+        <MudTd>@(context.INSPECTOR) </MudTd>
+        <MudTd>@(context.VENDOR)</MudTd>
+        <MudTd>@(context.CATEGORY)</MudTd>
+        <MudTd>@(context.DESCRIPTION)</MudTd>
+        <MudTd>@(context.COLOR)</MudTd>
+        <MudTd>@(context.MRP)</MudTd>
+        <MudTd>@(context.FABRIC)</MudTd>
+        <MudTd>@(context.OFFERED_QTY)</MudTd>
+        <MudTd>@(context.PO_QTY)</MudTd>
+        <MudTd>@(context.DATE_OF_INSPECTION)</MudTd>
+        <MudTd>
+            <MudChip T="string" Variant="Variant.Outlined" Color="Color.Success"> @(context.QA_ASSIGNED_DOI)  </MudChip>
+        </MudTd>
+        <MudTd>@context.ADDRESS</MudTd>
+        <MudTd>@(context.CREATED_ON.ToString("dd-MM-yyyy HH:mm:ss tt") ?? "")</MudTd>
+
+
+    </RowTemplate>
+    <LoadingContent>
+        <MudText>Loading...</MudText>
+    </LoadingContent>
+    <NoRecordsContent>
+        <MudText>No records found</MudText>
+    </NoRecordsContent>
+    <PagerContent>
+        <div style="width: 100%;">
+            <PagerControl PageNumber="_filter.PageNumber" PageSize="_filter.PageSize" TotalCount="_totalCount" Loading="IsLoading" PageChanged="OnPageChanged" PageSizeChanged="OnPageSizeChanged" />
+        </div>
+    </PagerContent>
+</MudTable>
+
+<Loader IsVisible="@IsLoading" />
+<MessageBox @ref="messageBox" />
+
+
+
+@code {
+    protected override string ListTypeCmd => "REPORT_LIST";
+    protected override Dictionary<string, string> RoleCmdMap => new()
+    {
+        ["Admin"] = "GET_REPORT_INSPECTIONS",
+        ["Buyer"] = "GET_REPORT_INSPECTIONS_BUYER_WISE",
+        ["Vendor"] = "GET_REPORT_INSPECTIONS_VENDOR_WISE",
+        ["QA"] = "GET_REPORT_INSPECTIONS_INSPECTOR_WISE"
+    };
+    private List<BreadcrumbItem> _items = new List<BreadcrumbItem>
+    {
+        new BreadcrumbItem("Inspection Requests", href: "/InspectionsReportNew",disabled: true),
+        new BreadcrumbItem("All Inspections", href: "#", disabled: true)
+    };
+    
+
+}
+
+<style>
+    .mud-table-container {
+        max-height: 48vh;
+    }
+</style>
+<style>
+    .mud-breadcrumbs {
+        padding: 12px 12px;
+    }
+
+    /* Target MudTable header row */
+    .mud-table thead tr th {
+        background-color: #ed008b !important;
+        color: #ffffff !important;
+        font-weight: bold !important;
+    }
+
+    .mud-table-cell {
+        padding-inline-start: 5px !important;
+        padding-inline-end: 5px !important;
+    }
+
+    .highlight {
+        background-color: yellow;
+        color: darkblue;
+        font-weight: bold;
+    }
+
+</style>
+
+

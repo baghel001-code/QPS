@@ -1,0 +1,60 @@
+﻿@using Microsoft.AspNetCore.Components.Web
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="icon" type="image/ico" href="favicon.ico" />
+
+    @* 1. Third-party base styles *@
+    <link href="Bootstrap/bootstrap.min.css" rel="stylesheet"  />
+    <link href="Bootstrap/font/bootstrap-icons.min.css" rel="stylesheet" />
+
+    @* 2. Component library styles *@
+    <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
+    <link href="_content/CodeBeam.MudBlazor.Extensions/MudExtensions.min.css" rel="stylesheet" />
+
+    @* 3. Your own styles LAST so they override library styles *@
+    <link href="resources/css/vmm.css?v=1.0.5" rel="stylesheet" />
+    <link href="resources/css/wizard.css?v=1.0.7" rel="stylesheet" />
+
+    <HeadOutlet @rendermode="RenderModeForPage" />
+</head>
+
+<body>
+    <Routes @rendermode="RenderModeForPage" />
+
+    @* 1. Third-party libraries (no Blazor dependency) *@
+    <script src="Bootstrap/js/bootstrap.bundle.min.js" ></script>
+    <script src="resources/js/zxing-browser.min.js?v=1.0.0"></script>
+
+    @* 2. Blazor runtime *@
+    <script src="_framework/blazor.web.js"></script>
+
+    @* 3. Component libraries (must come after blazor.web.js) *@
+    <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+    <script src="_content/CodeBeam.MudBlazor.Extensions/MudExtensions.min.js"></script>
+    <script src="_content/Extensions.MudBlazor.StaticInput/NavigationObserver.js"></script>
+
+    @* 4. Your app scripts (can use Bootstrap, ZXing, MudBlazor) *@
+    <script src="Js/site.js?v=1.0.17"></script>
+    <script src="resources/js/myjs.js?v=1.0.6"></script>
+    <script type="module" src="Js/idle-timeout.js?v=1.0.0"></script>
+
+</body>
+
+</html>
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    // /Account/* pages render as static SSR (HttpContext + Request.Form available).
+    // Everything else is interactive server, prerender off (avoids the form/click issues seen earlier).
+    private IComponentRenderMode? RenderModeForPage =>
+        HttpContext.Request.Path.StartsWithSegments("/Account")
+            ? null
+            : new InteractiveServerRenderMode(prerender: false);
+}

@@ -1,0 +1,232 @@
+﻿@implements IDisposable
+@using System.Reflection
+@using Admin.Components.Account
+@using Admin.Components.UIControls
+@using Application.Interfaces.V1.User
+@using Domain.Enums
+@inherits LayoutComponentBase
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthProvider
+@inject ISnackbar Snackbar
+@inject ICurrentUserService CurrentUser
+@inject ISessionInvalidationState InvalidationState
+<MudThemeProvider Theme="@_theme" IsDarkMode="_isDarkMode" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+<MudLayout>
+    <MudAppBar Elevation="5" style="background-color:white;">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
+        <MudSpacer />
+        @if (!_drawerOpen)
+        {
+            <MudImage Src="/resources/vishal-mega-mart-logo.png" Width="198" Height="33" Alt="logo" Elevation="0" />
+        }
+    </MudAppBar>
+    <MudDrawer @bind-Open="_drawerOpen"
+               ClipMode="DrawerClipMode.Never"
+               Elevation="8"
+               Style="background-color: #0e6cb1; color: white; display:flex; flex-direction:column; height:100%;">
+
+        <MudDrawerHeader Style="background-color:white; flex-shrink:0;">
+            <MudLink Href="/V1/Login2BsrAccount">
+                <MudImage Src="/resources/vishal-mega-mart-logo.png"
+                          Width="198" Height="33" Alt="logo" Elevation="0" />
+            </MudLink>
+        </MudDrawerHeader>
+
+        <div style="flex: 1 1 auto; overflow-y: auto; min-height: 0;">
+            <NavMenu />
+        </div>
+
+        <MudText Style="flex-shrink:0; text-align:center; padding: 8px 0;">
+            @appVersion
+        </MudText>
+
+    </MudDrawer>
+    <MudMainContent Class="px-5 py-20">
+        <ErrorBoundary>
+            <ChildContent>
+                @Body
+            </ChildContent>
+            <ErrorContent Context="ex">
+                <MudPaper Class="pa-6 ma-4" Elevation="3">
+                    <MudStack AlignItems="AlignItems.Center" Spacing="4">
+                        <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Color="Color.Error" Size="Size.Large" />
+                        <MudText Typo="Typo.h6" Color="Color.Error">Something went wrong</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">@ex.Message</MudText>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => Navigation.NavigateTo(Navigation.Uri, forceLoad: true))">Reload Page</MudButton>
+                    </MudStack>
+                </MudPaper>
+            </ErrorContent>
+        </ErrorBoundary>
+    </MudMainContent>
+</MudLayout>
+<LogoutForm @ref="_logout" />  
+<IdleTimeoutMonitor />
+
+
+
+<div id="blazor-error-ui">
+    An unhandled error has occurred.
+    <a href="" class="reload">Reload</a>
+    <a class="dismiss">🗙</a>
+</div>
+<div id="components-reconnect-modal"></div>
+@code {
+
+    private LogoutForm _logout = default!;               // ← add
+
+    private Task SignOutAsync() => _logout.SubmitAsync(); // ← add
+
+    private string? appVersion { get; set; }
+    private bool _drawerOpen = false;
+    private bool _isDarkMode = false;
+    private MudTheme? _theme = null;
+    protected async override void OnInitialized()
+    {
+        AuthProvider.AuthenticationStateChanged += OnAuthStateChanged;
+        appVersion = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "NA";
+        appVersion = $"QPS Ver.{appVersion.Split("+")[0]}";
+
+        base.OnInitialized();
+
+        _theme = new()
+        {
+            PaletteLight = _lightPalette,
+            PaletteDark = _darkPalette,
+            LayoutProperties = new LayoutProperties()
+        };
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+
+            var loginNotice = CurrentUser.ConsumeLoginNotice();
+            if (loginNotice == "DuplicateLogin")
+            {
+                await ShowSessionEndedDialogAsync(
+                    "Signed In Elsewhere",
+                    "Your account was already signed in on another device or browser. That session has been ended — you're now signed in here.");
+            }
+
+        }
+        catch (Exception ex)
+        {
+            
+        }
+        finally
+        {
+            //StateHasChanged();
+        }
+    }
+
+    private void DrawerToggle()
+    {
+        _drawerOpen = !_drawerOpen;
+    }
+    private void DarkModeToggle()
+    {
+        _isDarkMode = !_isDarkMode;
+    }
+
+
+    private readonly PaletteLight _lightPalette = new()
+    {
+        Black = "#110e2d",
+        AppbarText = "#424242",
+        AppbarBackground = "rgba(255,255,255,0.8)",
+        DrawerBackground = "#ffffff",
+        GrayLight = "#e8e8e8",
+        GrayLighter = "#f9f9f9",
+    };
+    private readonly PaletteDark _darkPalette = new()
+    {
+        Primary = "#7e6fff",
+        Surface = "#1e1e2d",
+        Background = "#1a1a27",
+        BackgroundGray = "#151521",
+        AppbarText = "#92929f",
+        AppbarBackground = "rgba(26,26,39,0.8)",
+        DrawerBackground = "#1a1a27",
+        ActionDefault = "#74718e",
+        ActionDisabled = "#9999994d",
+        ActionDisabledBackground = "#605f6d4d",
+        TextPrimary = "#b2b0bf",
+        TextSecondary = "#92929f",
+        TextDisabled = "#ffffff33",
+        DrawerIcon = "#92929f",
+        DrawerText = "#92929f",
+        GrayLight = "#2a2833",
+        GrayLighter = "#1e1e2d",
+        Info = "#4a86ff",
+        Success = "#3dcb6c",
+        Warning = "#ffb545",
+        Error = "#ff3f5f",
+        LinesDefault = "#33323e",
+        TableLines = "#33323e",
+        Divider = "#292838",
+        OverlayLight = "#1e1e2d80",
+    };
+    public string DarkLightModeButtonIcon => _isDarkMode switch
+    {
+        true => Icons.Material.Rounded.AutoMode,
+        false => Icons.Material.Outlined.DarkMode,
+    };
+
+
+    private async void OnAuthStateChanged(Task<AuthenticationState> task)
+    {
+        var state = await task;
+        if (state.User.Identity?.IsAuthenticated != true)
+        {
+            var (title, message) = InvalidationState.Reason switch
+            {
+                SessionInvalidReason.ForcedLogout => (
+                    "Signed Out",
+                    "Your account was signed in elsewhere or deactivated by an administrator. Please log in again."),
+                SessionInvalidReason.Expired => (
+                    "Session Expired",
+                    "Your session has expired for security reasons. Please log in again."),
+                _ => (
+                    "Session Ended",
+                    "Your session has ended. Please log in again.")
+            };
+
+            await ShowSessionEndedDialogAsync(title, message);
+
+            // var confirmed = await ShowLoginConfirmationAsync();
+            // if (!confirmed)
+            // {
+            //     return; // user clicked "No" — nothing happens, as you asked
+            // }
+
+            await CurrentUser.Logout();
+        }
+    }
+    private async Task ShowSessionEndedDialogAsync(string title, string message)
+    {
+        var parameters = new DialogParameters { ["Message"] = message };
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = false,
+            BackdropClick = false,//To prevent the dialog closing when the user clicks outside it, set it to false
+            MaxWidth = MaxWidth.ExtraSmall
+        };
+        var dialog = await DialogService.ShowAsync<SessionEndedDialog>(title, parameters, options);
+        await dialog.Result; // just wait for acknowledgment — result value doesn't change what happens next
+    }
+
+
+
+    public void Dispose() => AuthProvider.AuthenticationStateChanged -= OnAuthStateChanged;
+
+
+}
+<style>
+    .mud-icon-root.mud-svg-icon {
+        fill: currentColor !important;
+    }
+</style>

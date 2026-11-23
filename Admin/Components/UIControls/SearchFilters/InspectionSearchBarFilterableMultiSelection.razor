@@ -1,0 +1,193 @@
+﻿@using Admin.Components.UIControls.DropDowns
+@using Domain.Enums
+@if (Filter.HasAnyFilter())
+{
+    <MudPaper>
+        <div class="d-flex flex-wrap ga-1 pa-2" style="border-bottom: 1px solid var(--mud-palette-lines-default); max-height:96px; overflow-y:auto;">
+            @if (Filter.Vendors.Any())
+            {
+                <MudChip T="String" Text="VENDORS" Size="Size.Small" Color="Color.Info" />
+
+                @foreach (var item in Filter.Vendors)
+                {
+                    <MudChip T="MasterData" Text="@item.Master_Name.ToUpper()" Size="Size.Small" Color="Color.Secondary" Variant="Variant.Outlined" />
+                }
+
+            }
+
+            @if (Filter.Buyers.Any())
+            {
+
+                <MudChip T="String" Text="BUYERS" Size="Size.Small" Color="Color.Info" />
+                @foreach (var item in Filter.Buyers)
+                {
+                    <MudChip T="MasterData" Text="@item.Master_Name.ToUpper()" Size="Size.Small" Color="Color.Secondary" Variant="Variant.Outlined" />
+                }
+
+            }
+            @if (Filter.Categories.Any())
+            {
+
+                <MudChip T="String" Text="CATEGORIES" Size="Size.Small" Color="Color.Info" />
+                @foreach (var item in Filter.Categories)
+                {
+                    <MudChip T="MasterData" Text="@item.Master_Name.ToUpper()" Size="Size.Small" Color="Color.Secondary" Variant="Variant.Outlined" />
+                }
+
+            }
+            @if (Filter.Products.Any())
+            {
+                <MudChip T="String" Text="PRODUCTS" Size="Size.Small" Color="Color.Info" />
+                @foreach (var item in Filter.Products)
+                {
+                    <MudChip T="MasterData" Text="@item.Master_Name.ToUpper()" Size="Size.Small" Color="Color.Secondary" Variant="Variant.Outlined" />
+                }
+
+            }
+            @if (Filter.Inspectors.Any())
+            {
+                <MudChip T="String" Text="QA" Size="Size.Small" Color="Color.Info" />
+                @foreach (var item in Filter.Inspectors)
+                {
+                    <MudChip T="MasterData" Text="@item.Master_Name.ToUpper()" Size="Size.Small" Color="Color.Secondary" Variant="Variant.Outlined" />
+                }
+
+            }
+        </div>
+    </MudPaper>
+}
+<MudCard Class="pa-3" Elevation="2">
+    <MudCardContent Class="pa-0">
+
+        <MudGrid Spacing="2" AlignItems="Center.Center">
+
+            <MudItem xs="12" sm="6" md="2">
+                <FilterableMultiSelect Label="Vendor" SelectedItems="Filter.Vendors" OnClear="OnClearSearch"
+                                       SelectedItemsChanged="items => Filter.Vendors = items"
+                                       SearchFunc="@(s => SearchMaster(MasterType.Vendor_Master_List, s))" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="2">
+                <FilterableMultiSelect Label="Buyer" SelectedItems="Filter.Buyers" OnClear="OnClearSearch"
+                                       SelectedItemsChanged="items => Filter.Buyers = items"
+                                       SearchFunc="@(s => SearchMaster(MasterType.Buyer_Master_List, s))" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="2">
+                <FilterableMultiSelect Label="Category" SelectedItems="Filter.Categories" OnClear="OnClearSearch"
+                                       SelectedItemsChanged="items => Filter.Categories = items"
+                                       SearchFunc="@(s => SearchMaster(MasterType.Category_Master_List, s))" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <FilterableMultiSelect Label="Product / Style" SelectedItems="Filter.Products" OnClear="OnClearSearch"
+                                       SelectedItemsChanged="items => Filter.Products = items"
+                                       SearchFunc="@(s => SearchMaster(MasterType.Product_Master_List, s))" />
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="3">
+                <FilterableMultiSelect Label="Inspector / QA" SelectedItems="Filter.Inspectors" OnClear="OnClearSearch"
+                                       SelectedItemsChanged="items => Filter.Inspectors = items"
+                                       SearchFunc="@(s => SearchMaster(MasterType.Inspector_Master_List, s))" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="2">
+                <MudTextField T="string" Label="PO Number" @bind-Value="Filter.PONumber" Immediate="true" @onkeyup="OnKeyEnter" MaxLength="20" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="2">
+                <MudTextField T="string" Label="Inspection Number" @bind-Value="Filter.InspectionNumber" Immediate="true" @onkeyup="OnKeyEnter" MaxLength="20" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="1">
+                <MudTextField T="string" Label="MRP" @bind-Value="Filter.Mrp" Immediate="true" @onkeyup="OnKeyEnter" MaxLength="10" Validation="@(new Func<string, string>(ValidateMrp))" />
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="2">
+                <MudDatePicker Label="From Date" @bind-Date="Filter.FromDate" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="2">
+                <MudDatePicker Label="To Date" @bind-Date="Filter.ToDate" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="2">
+                <MudCheckBox T="bool" @bind-Value="Filter.IS_QC_AT_DC" Label="QC at DC" Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="12" md="1" Class="d-flex justify-end ga-2">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Disabled="@(!Filter.HasAnyFilter())"
+                           OnClick="TriggerSearch">
+                    Search
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" OnClick="TriggerClear"> Clear </MudButton>
+                @*   <MudButton Variant="Variant.Outlined" Disabled="@Filter.IsCleared" OnClick="TriggerClear">
+                    Clear @(Filter.ActiveFilterCount() > 0 ? $"({Filter.ActiveFilterCount()})" : "")
+                </MudButton> *@
+            </MudItem>
+        </MudGrid>
+    </MudCardContent>
+</MudCard>
+@code {
+    [Parameter, EditorRequired] public InspectionSearchFilterMultiSelection Filter { get; set; } = new();
+    [Parameter, EditorRequired] public EventCallback<InspectionSearchFilterMultiSelection> OnSearch { get; set; }
+    [Parameter] public EventCallback OnClear { get; set; }
+    [Parameter] public bool IsInspectorDisabled { get; set; } = false;
+    [Inject] protected IFetchMasterList _fetchMasterList { get; set; } = default!;
+
+    private async Task TriggerSearch()
+    {
+        await OnSearch.InvokeAsync(Filter);
+        Filter.MarkDirty();
+    }
+    private async Task OnClearSearch()
+    {
+        if (!Filter.HasAnyFilter())
+        {
+            await TriggerClear();
+        }
+
+    }
+
+    private async Task TriggerClear()
+    {
+        bool didReset = Filter.Reset();
+        if (!didReset) return; // nothing changed — don't re-search
+
+        if (OnClear.HasDelegate) await OnClear.InvokeAsync();
+        else
+        {
+            await TriggerSearch();
+            Filter.MarkReset();
+        }
+    }
+
+    private async Task OnKeyEnter(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await TriggerSearch();
+    }
+
+    private async Task<List<MasterData>> GetMasterData(MasterType type)
+    {
+        try
+        {
+            if ((type == MasterType.Inspector_Master_List || type == MasterType.Vendor_Master_List) && IsInspectorDisabled) return new List<MasterData>();
+
+            var selectRequest = new SelectListReq
+            {
+                Id = 0,
+                Cmd = type.ToString(),
+                StrField = string.Empty
+            };
+            var result = (await _fetchMasterList.FetchMasterList(type.ToString())).masterDataList;
+            return result ?? new List<MasterData>();
+           
+        }
+        catch (Exception ex)
+        {
+            //IsLoading = false;
+            Snackbar.Add($"Error loading {type.ToString()} data: {ex.Message}", Severity.Error);
+            return new List<MasterData>(); // ✅ Never return null
+        }
+    }
+
+    private async Task<IEnumerable<MasterData>> SearchMaster(MasterType type, string value) => await GetMasterData(type);
+    private string ValidateMrp(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return null;
+        return int.TryParse(value, out _) ? null : "Must be a whole number";
+    }
+}

@@ -1,0 +1,133 @@
+﻿@using Application.DTOs
+@using MudBlazor
+
+<EditForm Model="Dto" OnValidSubmit="Save">
+    <DataAnnotationsValidator />
+    <MudGrid>
+        <MudItem xs="12" sm="6">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Vendor Name</MudText>
+            <MudText Typo="Typo.body1" Class="font-weight-medium">@AuditState.VendorFactoryInfo.VendorName</MudText>
+        </MudItem>
+
+        <MudItem xs="12" sm="2">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Factory Owner Name</MudText>
+            <MudText Typo="Typo.body1" Class="font-weight-medium">@AuditState.VendorFactoryInfo.OwnerName</MudText>
+        </MudItem>
+        <MudItem xs="12" sm="2">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Owner Contact Number</MudText>
+            <MudText Typo="Typo.body1" Class="font-weight-medium">@AuditState.VendorFactoryInfo.OwnerContactNo</MudText>
+        </MudItem>
+        <MudItem xs="12" sm="2">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Buyer Name</MudText>
+            <MudText Typo="Typo.body1" Class="font-weight-medium">@AuditState.VendorFactoryInfo.BuyerName</MudText>
+        </MudItem>
+        <MudItem xs="12" sm="6">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Vendor/Factory Address</MudText>
+            <MudText Typo="Typo.body1" Class="font-weight-medium">@AuditState.VendorFactoryInfo.FactoryAddress</MudText>
+        </MudItem>
+
+        <MudItem xs="12" sm="6">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Additional UNIT (IF ANY)</MudText>
+            <MudText Typo="Typo.body1" Class="font-weight-medium"></MudText>
+        </MudItem>
+        <MudItem xs="12" sm="6">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Category</MudText>
+            <MudText Typo="Typo.body1" Class="font-weight-medium">@AuditState.VendorFactoryInfo.Category</MudText>
+        </MudItem>
+        <MudItem xs="12" sm="6">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Product Name</MudText>
+            <MudText Typo="Typo.body1" Class="font-weight-medium">@AuditState.VendorFactoryInfo.ProductName</MudText>
+        </MudItem>
+
+        <MudItem xs="12" sm="6">
+            <MudTextField @bind-Value="Dto.FactoryOwnerEmail"
+                          Label="Factory Owner Email"
+                          Required="true"
+                          RequiredError="Factory owner email is required."
+                          Placeholder="owner@factory.com"
+                          InputType="InputType.Email"
+                          Variant="Variant.Outlined"
+                          For="@(() => Dto.FactoryOwnerEmail)" Disabled=CanSave />
+        </MudItem>
+    </MudGrid>
+    <MudStack Row="true" Justify="Justify.SpaceBetween" Class="mt-6">
+        <MudButton Variant="Variant.Outlined"
+                   Color="Color.Default"
+                   StartIcon="@Icons.Material.Filled.ArrowBack"
+                   OnClick="() => OnBack.InvokeAsync()">
+            Back
+        </MudButton>
+
+        <MudButton ButtonType="ButtonType.Submit"
+                   Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   EndIcon="@Icons.Material.Filled.ArrowForward">
+            Save &amp; Next
+        </MudButton>
+    </MudStack>
+</EditForm>
+
+@code {
+    [Parameter] public bool CanSave { get; set; }
+    [Parameter] public WizardStateDto AuditState { get; set; } = default!;
+    [Parameter] public EventCallback<VendorInfoRequest> OnSave { get; set; }
+    [Parameter] public EventCallback OnBack { get; set; }
+
+    private VendorInfoRequest Dto { get; set; } = new();
+
+    protected override void OnParametersSet() => Dto = AuditState.Step2;
+
+    private async Task Save()
+    {
+        // ── Validate FIRST before any operation ───────────────────────
+        if (CanSave != false)
+        {
+            Snackbar.Add("Cannot save : Audit is already submitted.", Severity.Warning);
+            return;
+        }
+        await OnSave.InvokeAsync(Dto);
+    }
+}
+
+@* @using Application.DTOs
+
+<EditForm Model="Dto" OnValidSubmit="Save">
+    <DataAnnotationsValidator />
+    <div class="form-grid two-col">
+        <div class="form-group">
+            <label>Audit Request ID <span class="req">*</span></label>
+            <InputNumber @bind-Value="Dto.AuditReqId" class="fc" placeholder="System-assigned request ID" readonly="true" />
+            <ValidationMessage For="@(() => Dto.AuditReqId)" />
+        </div>
+        <div class="form-group">
+            <label>Factory Owner Email <span class="req">*</span></label>
+            <InputText @bind-Value="Dto.FactoryOwnerEmail" class="fc" type="email"
+                       placeholder="owner@factory.com" />
+            <ValidationMessage For="@(() => Dto.FactoryOwnerEmail)" />
+        </div>
+    </div>
+    <div class="form-grid two-col">
+        <div class="form-group">
+            <label>Vendor Name <span class="req">*</span></label>
+            <InputText @bind-Value="AuditState.VendorFactoryInfo.VendorName" class="fc" readonly="true" />
+        </div>
+        <div class="form-group">
+            <label>Vendor Address <span class="req">*</span></label>
+            <InputText @bind-Value="AuditState.VendorFactoryInfo.FactoryAddress" class="fc" readonly="true" />
+        </div>
+    </div>
+    <div class="step-actions">
+        <button type="button" class="btn-secondary" @onclick="() => OnBack.InvokeAsync()">← Back</button>
+        <button type="submit" class="btn-primary">Save &amp; Next →</button>
+    </div>
+</EditForm>
+
+@code {
+    [Parameter] public WizardStateDto AuditState { get; set; } = default!;
+    [Parameter] public EventCallback<VendorInfoRequest> OnSave { get; set; }
+    [Parameter] public EventCallback OnBack { get; set; }
+    private VendorInfoRequest Dto { get; set; } = new();
+    protected override void OnParametersSet() { Dto = AuditState.Step2; }//if (AuditState.AuditId > 0)
+    private async Task Save() => await OnSave.InvokeAsync(Dto);
+}
+ *@

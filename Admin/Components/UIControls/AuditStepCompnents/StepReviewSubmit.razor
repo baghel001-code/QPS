@@ -1,0 +1,141 @@
+﻿@using Application.DTOs
+
+<div class="review-panels">
+
+    @* Basic info *@
+    <div class="review-panel">
+        <h3>📋 Audit Information</h3>
+        <div class="kv-grid">
+            <div><label>Auditor Code</label><span>@AuditState.Step1.AuditorNameWithEmpCode</span></div>
+            <div><label>Audit Date</label><span>@AuditState.Step1.AuditDate.ToString("dd MMM yyyy")</span></div>
+            <div><label>Audit Request ID</label><span>@AuditState.Step1.AuditReqId</span></div>
+            <div><label>Factory Email</label><span>@AuditState.Step2.FactoryOwnerEmail</span></div>
+        </div>
+    </div>
+
+    @* Documents *@
+    <div class="review-panel">
+        <h3>📑 Documents</h3>
+        <div class="doc-chips">
+            <span class="chip yes">✓ @AuditState.Step3Docs.Count(d => d.IsAvailable == "Y") Available</span>
+            <span class="chip no">✗ @AuditState.Step3Docs.Count(d => d.IsAvailable == "N") Not Available</span>
+            <span class="chip pending">? @AuditState.Step3Docs.Count(d => d.IsAvailable == null) Pending</span>
+        </div>
+    </div>
+
+    @* Element scores *@
+    <div class="review-panel">
+        <h3>
+            📊 Key Element Scores
+        </h3>
+        <table class="audit-tbl compact">
+            <thead>
+                <tr><th>#</th><th>Element</th><th>Rated</th><th>Avg Score</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var es in AuditState.ElementSteps)
+                {
+                    var elem = Elements.FirstOrDefault(e => e.ElementId == es.ElementId);
+                    var rated = es.CheckPoints.Count(c => c.Score.HasValue);
+                    var total = es.CheckPoints.Count;
+                    var avg = rated > 0 ? es.CheckPoints.Where(c => c.Score.HasValue).Average(c => (double)c.Score!) : 0.0;
+                    <tr class="@(rated < total ? "incomplete" : "")">
+                        <td>@(elem?.ElementNo)</td>
+                        <td>@elem?.ElementName</td>
+                        <td class="@(rated == total ? "text-ok" : "text-warn")">@rated / @total</td>
+                        <td>@(rated > 0 ? avg.ToString("F1") : "–")</td>
+                        <td>@(rated == total ? "✅" : "⏳")</td>
+                    </tr>
+                }
+               
+                @if (DisplayScore != null)
+                {
+                    @if (IsPreview)
+                    {
+                        <tr>
+                            <td colspan="5" style="background-color:#FFF3CD; color:#856404; padding:6px; text-align:center;">
+                                ⚠️ <b>Preview only</b> — Score will be confirmed upon submission.
+                            </td>
+                        </tr>
+                    }
+
+                    <tr>
+                        <td colspan="2" style="font-size:larger;">
+                            <b>Audit Score : @DisplayScore.ScorePercent %</b>
+                        </td>
+                        <td style="font-size:larger;"><b>Rating</b></td>
+                        <td colspan="2" style="font-size:larger;"><b>Color Indicator</b></td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="font-size:larger;">
+                            <b>
+                                @if (IsPreview)
+                                {
+                                    <span>Estimated Validity : @DisplayScore.ValidityTill.ToString("dd-MMM-yyyy")</span>
+                                }
+                                else
+                                {
+                                    <span>Validity Till : @DisplayScore.ValidityTill.ToString("dd-MMM-yyyy")</span>
+                                }
+                            </b>
+                        </td>
+                        <td style="font-size:larger; background-color:@(DisplayScore.ColorHex);">
+                            <b>@DisplayScore.GradeCode</b>
+                        </td>
+                        <td colspan="2" style="font-size:larger; background-color:@(DisplayScore.ColorHex);">
+                            <b>@DisplayScore.ValidationPeriod</b>
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    <tr>
+                        <td colspan="5" style="text-align:center; color:gray;">
+                            Score not available — please complete all audit steps.
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @* Comments *@
+    @if (!string.IsNullOrWhiteSpace(AuditState.Step15.OverallComments))
+    {
+        <div class="review-panel">
+            <h3>💬 Comments</h3>
+            <p class="comment-box">@AuditState.Step15.OverallComments</p>
+        </div>
+    }
+
+    <div class="submit-notice">
+        ⚠️ Clicking <strong>Submit Audit</strong> will finalise the form, calculate the score and
+        determine the factory grade. This cannot be undone.
+    </div>
+</div>
+
+<div class="step-actions">
+    <button class="btn-secondary" @onclick="() => OnBack.InvokeAsync()">← Back</button>
+    <button class="btn-submit" @onclick="() => Save()">🚀 Submit Audit</button>
+</div>
+
+@code {
+    [Parameter] public bool CanSave { get; set; }
+    [Parameter] public WizardStateDto AuditState { get; set; } = default!;
+    [Parameter] public List<KeyElementResponse> Elements { get; set; } = new();
+    [Parameter] public EventCallback OnSubmit { get; set; }
+    [Parameter] public EventCallback OnBack { get; set; }
+    private async Task Save()
+    {
+        {
+            if (CanSave != false)
+            {
+                Snackbar.Add("Cannot save : Audit is already submitted.", Severity.Warning);
+                return;
+            }
+            await OnSubmit.InvokeAsync();
+        }
+    }
+    private ScoreResultResponse? DisplayScore => AuditState.IsSubmitted ? AuditState.ScoreResult : AuditState.ComputePreviewScore();        // official score from DB   // live preview
+    private bool IsPreview => !AuditState.IsSubmitted;
+}

@@ -1,0 +1,418 @@
+﻿@using Admin.Components.Pages.UserMaster
+@using Admin.Components.Shared
+@using Admin.Services
+@using Application.Interfaces.V1.User
+@using Domain.Records
+@using EmailService.Models
+@using MudExtensions
+@using System.Text.RegularExpressions
+@using System.Security.Claims
+@inject IInspectionDetailLoader _detailLoader
+<MudDialog>
+    <DialogContent>
+        <MudTable Items="filteredPO" @ref="mudTable" Dense="true">
+            <ToolBarContent>
+                <MudSpacer />
+                <MudTextField T="string" Value="@searchQuery" ValueChanged="OnSearchChanged" Placeholder="Search on PO, Vendor and Vendor Code." Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+            </ToolBarContent>
+            <HeaderContent>
+                <MudTh>INSP-ID/PO</MudTh>
+                <MudTh>INSPECTION DATE</MudTh>
+                <MudTh>INSPECTION#</MudTh>
+                <MudTh>INSPECTOR</MudTh>
+                <MudTh>VENDOR</MudTh>
+                <MudTh>LOCATION</MudTh>
+                <MudTh>CATEGORY</MudTh>
+                <MudTh>BUYER</MudTh>
+                <MudTh>CONTACT PERSON</MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@(context.INSP_ID)/@(context.PO_NUMBER)</MudTd>
+                <MudTd>
+                    @context.QA_ASSIGNED_DOI.ToString("dd-MMM-yyyy hh:mm tt")
+                </MudTd>
+                <MudTd>
+                    <MudChip T="string"  Variant="Variant.Outlined" Color="Color.Secondary"> @(context.INSPECTION_NO)  </MudChip>
+                </MudTd>
+                <MudTd>@(context.EMP_NAME) ( @context.INSPECTOR_EMP_CODE )</MudTd>
+                <MudTd>@(context.VENDOR_NAME) [@context.VENDOR_CODE]</MudTd>
+                <MudTd>@(context.ADDRESS_LINE1), @context.CITY ( @context.PINCODE )</MudTd>
+                <MudTd>@(context.CATEGORY)</MudTd>
+                <MudTd>@(context.BUYER_NAME) (@context.BUYER_ID)</MudTd>
+                <MudTd>@(context.CONTACT_PERSON) (@context.MOBILE_NUMBERS)</MudTd>
+                <MudTd>
+                    @if (context.QA_ASSIGNED_DOI == DateTime.Now.Date && context.INSPECTOR_EMP_CODE == _CurrentUser.UserCode)
+                    {
+                        <MudButton OnClick="() => OpenRoleDialog(context.INSP_ID)" StartIcon="@Icons.Material.Filled.Update" Color="Color.Success" Variant="Variant.Text" />
+                    }
+                </MudTd>
+            </RowTemplate>
+            <LoadingContent>
+                <MudText>Loading...</MudText>
+            </LoadingContent>
+            <NoRecordsContent>
+                <MudText>No records found</MudText>
+            </NoRecordsContent>
+            <PagerContent>
+                <MudTablePager PageSizeOptions="@pageSizeOptions" />
+            </PagerContent>
+        </MudTable>
+    </DialogContent>
+
+    <DialogActions>
+        @*  <MudButton OnClick="Save" Color="Color.Info" Variant="Variant.Filled" Disabled="@isSubmitting">Assign</MudButton> *@
+        <MudButton OnClick="CloseDialog" Color="Color.Error" Variant="Variant.Filled">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+<Loader IsVisible="@IsLoading" />
+
+@code {
+
+    [Inject] protected ICurrentUserService _CurrentUser { get; set; } = default!;
+    bool isShow;
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+    public POHeader PO { get; set; } = new();
+    [Parameter] public string IDs { get; set; } = "";
+    private MudTable<INSPECTIONLISTMODEL> mudTable;
+    private int pageSize => 50; // Items per page
+    private int[] pageSizeOptions => new[]
+  {
+        pageSize * 1,
+        pageSize * 2,
+        pageSize * 3,
+        pageSize * 4,
+        pageSize * 5
+    };
+    private List<INSPECTIONLISTMODEL> filteredPO = new();
+    private List<INSPECTIONLISTMODEL> pagedPO = new(); // Users to be shown on the current page
+    private string searchQuery = string.Empty;
+    private int currentPage = 0; // Current page index
+    public bool IsMaked { get; set; } = false;
+
+    private bool isFatched { get; set; }
+
+    private MudForm form;
+    private bool isSubmitting = false;
+    bool IsLoading = false;
+
+    private SelectListReq selectListReq = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrEmpty(IDs))
+        {
+            await GetInspections();
+            StateHasChanged();
+        }
+        else
+        {
+            PO = new();
+            isFatched = false;
+        }
+
+
+    }
+
+    private async Task GetInspections()
+    {
+        selectListReq.Id = 0;
+        selectListReq.StrField = IDs;
+        selectListReq.Cmd = "";
+        var res = await ApiMasterService.CallingAPI<AssignPendingInspectionListResponse, SelectListReq>(AllApiNames.GET_ALL_ASSIGNPENDING_INSPN, selectListReq);
+        if (res.responseCode == 0)
+        {
+            if (res.ListofInspections == null)
+            {
+                Snackbar.Add("No record found.", Severity.Error);
+            }
+            else
+            {
+                pagedPO = res.ListofInspections;
+            }
+        }
+        else
+        {
+            Snackbar.Add(res.responseMessage!, Severity.Error);
+        }
+
+        filteredPO = pagedPO;
+
+    }
+
+    private async Task Reset()
+    {
+        bool? dres = await DialogService.ShowMessageBox("Confirmation", "Are you sure you want to reset the form ?", yesText: "  Yes!  ", cancelText: "   No   ");
+        if (dres == null)
+        {
+            return;
+        }
+        else
+        {
+            PO = new();
+            isFatched = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseDialog()
+    {
+        MudDialog?.Close();
+    }
+    private async Task ShowErrorDialog(string Tital, string message)
+    {
+        await DialogService.ShowMessageBox(Tital, message);
+    }
+
+    private void OnSearchChanged(string searchQuery)
+    {
+        this.searchQuery = searchQuery;
+        FilterPOs(); // Apply search filter
+    }
+    private void FilterPOs()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            filteredPO = pagedPO; // Show all Users if search is empty
+        }
+        else
+        {
+            filteredPO = pagedPO
+                .Where(po => po.VENDOR_CODE!.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                       po.VENDOR_NAME!.ToString().Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                       po.PO_NUMBER.ToString().Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                       po.POID!.ToString().Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            ApplyPaging(); // Re-apply pagination after search
+        }
+    }
+    private void ApplyPaging()
+    {
+        var startIndex = currentPage * pageSize;
+        filteredPO = filteredPO.Skip(startIndex).Take(pageSize).ToList(); // Paginate the filtered Users
+    }
+
+    private async Task OpenRoleDialog(int inspectionId)
+    {
+        var po = await _detailLoader.LoadAsync(new Domain.Records.InspectionDetailRequest(
+            inspectionId, UseQamRegionList: true, FilterInspectionTypeByPoNumber: true));
+
+        await new QaInspectionDialogLauncher().ShowAsync(DialogService, po!, true);
+    }
+}
+<style>
+    .muddividr {
+        margin: 0 !important;
+        border-color: #f408b2 !important;
+        border-width: 2px;
+    }
+
+    .mud-breadcrumbs {
+        padding: 12px 12px;
+    }
+
+    .floating-search-btn {
+        position: fixed;
+        top: 50%;
+        right: 0;
+        transform: translateY(-50%);
+        background-color: #e91e63;
+        color: white;
+        padding: 10px 6px;
+        border-radius: 8px 0 0 8px;
+        cursor: pointer;
+        writing-mode: vertical-rl;
+        text-orientation: mixed;
+        font-weight: bold;
+        z-index: 999;
+        box-shadow: 0 0 8px rgba(0,0,0,0.2);
+    }
+
+        .floating-search-btn:hover {
+            background-color: #c2185b;
+        }
+
+    .search-modal {
+        position: fixed;
+        top: 170px;
+        right: 35px;
+        background-color: white;
+        width: 320px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+        border-radius: 8px;
+        z-index: 1000;
+    }
+
+        .search-modal .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .search-modal .close-btn {
+            background: none;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+        }
+
+    .mud-simple-table.mud-table-dense * tr td, .mud-simple-table.mud-table-dense * tr th {
+        padding: 2px 4px
+    }
+
+    .font8 {
+        font-size: 0.8rem;
+    }
+
+    .mud-list-subheader-extended {
+        padding-top: 0px;
+        padding-bottom: 0px;
+        margin-bottom: -12px !important;
+    }
+
+    .mud-list-item-extended {
+        padding-bottom: 0px !important;
+    }
+
+    .mud-list-item-gutters-extended.mud-list-item-dense-extended {
+        padding-left: 4px;
+        padding-right: 4px;
+        padding-top: 0px;
+        padding-bottom: 0px;
+    }
+
+    .mud-list-subheader-gutters-extended {
+        padding-left: 8px;
+        padding-right: 8px;
+        padding-top: 0px !important;
+        padding-bottom: 0px !important;
+    }
+
+    .mud-icon-button-edge-margin-end {
+        color: red !important;
+    }
+
+    .mud-input > input.mud-input-root-outlined, div.mud-input-slot.mud-input-root-outlined {
+        padding: 15px 10px;
+        font-size: 12px;
+        height: 20px !important;
+    }
+
+
+
+    .filter-paper {
+        padding-left: 8px !important;
+        padding-right: 8px !important;
+        padding-top: 25px !important;
+        padding-bottom: 5px !important;
+        margin-left: 22px !important;
+        margin-right: 28px !important;
+        margin-bottom: 20px !important;
+    }
+
+    .mud-link {
+        font-size: 0.8rem !important;
+    }
+
+    .mud-list-item-multiselect-extended.mud-list-item-multiselect-checkbox-extended {
+        padding-inline-end: 0px;
+    }
+
+    .border1pxblack {
+        border: 1px solid #ffffffeb;
+        background-color: #ed008b !important;
+        color: white;
+    }
+
+    .border1pxblack1 {
+        background-color: #ed008b !important;
+        color: white;
+        border: none !important;
+    }
+
+    .my-custom-select {
+        position: relative;
+    }
+
+        .my-custom-select .mud-popover {
+            padding-top: 20px;
+        }
+
+    .filter-close-button {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        cursor: pointer;
+        background-color: white;
+        border: 1px solid #ccc;
+        border-radius: 50%;
+        padding: 2px;
+        z-index: 99999;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+
+    .mud-list-subheader-extended {
+        top: -6px !important;
+    }
+
+    .mud-list-subheader-extended {
+        position: relative !important;
+    }
+
+    .disabled-div {
+        pointer-events: none; /* Prevent clicks */
+        opacity: 0.6; /* Dimmed look */
+        background-color: #f0f0f0; /* Optional: lighter background */
+        user-select: none; /* Prevent text selection */
+    }
+
+    .mud-dialog-title {
+        border-bottom: 1px solid #1413140d;
+    }
+
+    .mud-dialog-actions {
+        border-top: 1px solid #1413140d;
+    }
+
+    .mud-dialog-content {
+        padding-top: 1.5rem !important;
+        padding-bottom: 1.5rem !important;
+    }
+
+    .mud-dialog-title {
+        padding: 11px !important;
+    }
+
+    .mud-message-box__yes-button {
+        color: white !important;
+        background-color: green !important;
+    }
+
+    .mud-message-box__cancel-button {
+        color: white !important;
+        background-color: red !important;
+    }
+
+    .mud-message-box .mud-dialog-actions {
+        display: flex;
+        flex-direction: row-reverse;
+        justify-content: flex-start;
+    }
+</style>
+<style>
+
+    .mud-dialog-title {
+        color: white !important;
+        background: linear-gradient(to right, #0e6cb1, #ffffff) !important;
+    }
+
+    .mud-dialog-actions {
+        background: linear-gradient(to right, #3b7ed12b, #ffffff) !important
+    }
+
+</style>

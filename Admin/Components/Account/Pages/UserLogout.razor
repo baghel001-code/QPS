@@ -1,0 +1,14 @@
+﻿@page "/Account/User-LogoutOld"
+@using Application.Interfaces.V1.User
+@using Microsoft.AspNetCore.Authentication
+@layout BlankLayout
+@attribute [AllowAnonymous]
+@inject ICurrentUserService CurrentUser
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await CurrentUser.Logout();
+    }
+    
+
+}

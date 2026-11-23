@@ -1,0 +1,141 @@
+﻿<div class="filterable-multiselect-anchor" style="position: relative;">
+    <MudTextField T="string"
+                  Label="@Label"
+                  Value="_filterText"
+                  ValueChanged="OnTextChanged"
+                  Adornment="Adornment.End"
+                  AdornmentIcon="@Icons.Material.Filled.ArrowDropDown"
+                  OnAdornmentClick="TogglePanel"
+                  Immediate="true"
+                  @onfocus="OpenPanel"
+                  Placeholder="@PlaceholderText" />
+    @if (_isOpen)
+    {
+        <MudOverlay Visible="true" DarkBackground="false" ZIndex="9" @onclick="ClosePanel" />
+        <MudPaper Class="pa-2" Style="position:absolute; top:100%; left:0; right:0; z-index:10; max-height:380px; display:flex; flex-direction:column;" Elevation="4">
+
+            <div class="d-flex justify-space-between align-center px-1 py-1" style="border-bottom: 1px solid var(--mud-palette-lines-default);">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">@SelectedItems.Count selected</MudText>
+                @*     <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="SelectAllVisible">Select All</MudButton> *@
+                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" OnClick="ClearSelection">Clear</MudButton>
+            </div>
+
+            <div style="overflow-y:auto; flex:1;">
+                @if (_isLoading)
+                {
+                    <MudProgressLinear Indeterminate="true" Size="Size.Small" />
+                }
+                else if (!_results.Any())
+                {
+                    <MudText Typo="Typo.body2" Class="pa-2 mud-text-secondary">No matches</MudText>
+                }
+                else
+                {
+                    @foreach (var item in _results)
+                    {
+                        <div class="d-flex align-center px-2 py-1" style="cursor:pointer;"
+                             @onclick="() => ToggleItem(item, !IsSelected(item))">
+                            <MudCheckBox T="bool" Value="IsSelected(item)"
+                                         ValueChanged="@(v => ToggleItem(item, v))"
+                                         Dense="true" />
+                            <MudText Typo="Typo.body2">@item.Master_Name</MudText>
+                        </div>
+                    }
+                }
+            </div>
+
+            <div class="d-flex justify-end pt-1" style="border-top: 1px solid var(--mud-palette-lines-default);">
+                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" OnClick="ClosePanel">Done</MudButton>
+            </div>
+        </MudPaper>
+    }
+</div>
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter, EditorRequired] public List<MasterData> SelectedItems { get; set; } = new();
+    [Parameter] public EventCallback<List<MasterData>> SelectedItemsChanged { get; set; }
+    [Parameter, EditorRequired] public Func<string?, Task<IEnumerable<MasterData>>> SearchFunc { get; set; } = default!;
+    [Parameter] public EventCallback OnClear { get; set; }
+
+
+    private string _filterText = "";
+    private List<MasterData> _allItems = new();   // full list, loaded once
+    private List<MasterData> _results = new();    // locally filtered view
+    private bool _isOpen;
+    private bool _isLoading;
+
+
+    private string PlaceholderText =>
+        SelectedItems.Any() ? $"{SelectedItems.Count} selected" : "Type to search...";
+
+    private bool IsSelected(MasterData item) => SelectedItems.Any(s => s.String_ID == item.String_ID);
+
+    private async Task OpenPanel()
+    {
+        _isOpen = true;
+        if (!_allItems.Any())
+            await LoadAllItems();
+        ApplyFilter();
+    }
+
+    private void TogglePanel() => _isOpen = !_isOpen;
+
+    private void ClosePanel()
+    {
+        _filterText = "";
+        _isOpen = false;
+        // if (!SelectedItems.Any())
+        //      OnClear.InvokeAsync();
+    }
+
+    private void OnTextChanged(string value)
+    {
+        _filterText = value;
+        _isOpen = true;
+        ApplyFilter();   // instant, no debounce/network call needed
+    }
+
+    private async Task LoadAllItems()
+    {
+        _isLoading = true;
+        _allItems = (await SearchFunc(null)).ToList(); // one call to get everything
+        _isLoading = false;
+    }
+
+    private void ApplyFilter()// local filter item selection
+    {
+        _results = string.IsNullOrWhiteSpace(_filterText)
+            ? _allItems
+            : _allItems
+                .Where(i => i.Master_Name.Contains(_filterText, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+    }
+
+    private async Task ToggleItem(MasterData item, bool selected)
+    {
+        if (selected && !IsSelected(item))
+            SelectedItems.Add(item);
+        else if (!selected)
+            SelectedItems.RemoveAll(s => s.String_ID == item.String_ID);
+
+        await SelectedItemsChanged.InvokeAsync(SelectedItems);
+        await OnClear.InvokeAsync();
+    }
+
+    private void SelectAllVisible() // for select all items
+    {
+        foreach (var item in _results.Where(r => !IsSelected(r)))
+            SelectedItems.Add(item);
+
+        SelectedItemsChanged.InvokeAsync(SelectedItems);
+    }
+
+    private void ClearSelection()
+    {
+        SelectedItems.Clear();
+        SelectedItemsChanged.InvokeAsync(SelectedItems);
+
+    }
+}
+

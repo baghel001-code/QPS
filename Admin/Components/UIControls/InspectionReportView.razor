@@ -1,0 +1,453 @@
+﻿@inherits InspectionReportPageBase
+@using Admin.Components.Shared
+@using Admin.Components.UIControls.BaseComponents
+@using MudBlazor
+
+<MudDialog>
+    <DialogContent>
+
+        @if (_reportModel is null)
+        {
+            <MudProgressCircular Indeterminate="true" />
+        }
+        else
+        {
+            <!-- PRINT AREA -->
+            <div id="print-area">
+
+                <MudPaper Elevation="0" Class="pa-2 print-paper">
+                    <!-- HEADER -->
+                    <MudStack Spacing="1" AlignItems="AlignItems.Center">
+                        <MudImage Src="resources/vishal-mega-mart-logo.png" Alt="Vishal Mega Mart Logo" style="width:20%" />
+                        <MudText Typo="Typo.h5" Bold="true">Vishal Mega Mart Limited</MudText>
+                        <MudChip T="string" Color="_reportModel.IsPass? Color.Success: Color.Error" Variant="Variant.Filled">
+                            <MudText Typo="Typo.h4" Class="fw-bold">
+                                @_reportModel.InspectionResultText
+                            </MudText>
+                        </MudChip>
+                        <MudText Typo="Typo.subtitle2">
+                            @if (rpt == "Inline")
+                            {
+                                <b>@title</b>
+                            }
+                            else
+                            {
+                                <b>
+                                    @rpt
+                                    <sup>@sup</sup>
+                                    -
+                                </b>
+                                @title
+                            }
+                        </MudText>
+                    </MudStack>
+                    <MudDivider Class="my-3" />
+
+                    <MudGrid>
+                        <MudItem xs="6"><b>Buyer Name:-</b> @_reportModel.BuyerName (@_reportModel.BuyerId) </MudItem>
+                        <MudItem xs="6" class="d-flex justify-end"><b>Report No:- </b> @_reportModel.ReportNo</MudItem>
+                    </MudGrid>
+
+                    <MudDivider Class="my-3" />
+
+                    <!-- BASIC INFO -->
+                    <MudGrid>
+                        <MudItem xs="2"><b>PO No:</b> </MudItem>
+                        <MudItem xs="4">@_reportModel.PONumber</MudItem>
+                        <MudItem xs="3"><b>FI Date:</b> @_reportModel.FIDate?.ToString("dd-MM-yyyy HH:mm") </MudItem>
+                        <MudItem xs="3"><b>Last Amendment On:</b> @_reportModel.Last_Amendment_Date?.ToString("dd-MM-yyyy HH:mm") </MudItem>
+
+
+                        <MudItem xs="2"><b>Vendor:</b> </MudItem>
+                        <MudItem xs="4"> @_reportModel.VendorName (@_reportModel.VendorCode)</MudItem>
+                        <MudItem xs="2"><b>Vendor Location:</b> </MudItem>
+                        <MudItem xs="4">@_reportModel.VendorLocation</MudItem>
+
+                        <MudItem xs="2"><b>Order Quantity:</b> </MudItem>
+                        <MudItem xs="4">@_reportModel.POTotalQty.ToString("0")</MudItem>
+                        <MudItem xs="2"><b>Description/FIT/MRP:</b> </MudItem>
+                        <MudItem xs="4">
+                            @string.Join(" / ", new[]
+                            {
+                                !string.IsNullOrEmpty(_reportModel.MCText) ? _reportModel.MCText : "---",
+                                                !string.IsNullOrEmpty(_reportModel.Fit) ? _reportModel.Fit : "---",
+                                                _reportModel.MRP > 0 ? _reportModel.MRP.ToString() : "---"
+                                                }.Where(x => !string.IsNullOrEmpty(x)))
+                    </MudItem>
+
+                    <MudItem xs="2"><b>Offered Quantity:</b> </MudItem>
+                    <MudItem xs="2"> @_reportModel.OfferedQuantity.ToString("0") </MudItem>
+                    <MudItem xs="2"><b>Ship Qty.: </b>@_reportModel.ShipQuantity</MudItem>
+                    <MudItem xs="2"><b>Category/Label/Color:</b> </MudItem>
+                    <MudItem xs="4">
+                        @string.Join(" / ", new[]
+                                                {
+                                !string.IsNullOrEmpty(_reportModel.Category) ? _reportModel.Category : "---",
+                                                !string.IsNullOrEmpty(_reportModel.BrandId) ? _reportModel.BrandId : "---",
+                                                !string.IsNullOrEmpty(_reportModel.Color) ? _reportModel.Color : "---"
+                                                }.Where(x => !string.IsNullOrEmpty(x)))
+                    </MudItem>
+
+                    <MudItem xs="2"><b>Article Number:</b> </MudItem>
+                    <MudItem xs="10">@_reportModel.ArticleNumber</MudItem>
+                </MudGrid>
+
+                <MudDivider Class="my-3" />
+
+                <!-- GPT / ELASTIC / ZIPPER / PACKING -->
+                <MudGrid>
+                    <MudItem xs="2"><b>GPT. No.:</b> </MudItem>
+                    <MudItem xs="4"> @_reportModel.GptNo</MudItem>
+                    <MudItem xs="2"><b>Status:</b> </MudItem>
+                    <MudItem xs="4"> @_reportModel.GptStatus </MudItem>
+
+                    <MudItem xs="2"><b>Approved By (if GPT fails):</b> </MudItem>
+                    <MudItem xs="4"> @_reportModel.GptApprovedBy</MudItem>
+                    <MudItem xs="2"><b>Approved Date:</b> </MudItem>
+                    <MudItem xs="4"> @_reportModel.GptApprovedDate</MudItem>
+
+                    <MudItem xs="2"><b>Area of fail GPTR</b> </MudItem>
+                    <MudItem xs="10"> @_reportModel.AreaOfFailGptr</MudItem>
+
+                    <MudItem xs="2"><b>GPT. Elastic No.:</b> </MudItem>
+                    <MudItem xs="4"> @_reportModel.GptElasticNo</MudItem>
+                    <MudItem xs="2"><b>Status:</b> </MudItem>
+                    <MudItem xs="4"> @_reportModel.GptElasticStatus </MudItem>
+
+                    <MudItem xs="2"><b>Approved By (if Elastic fails):</b> </MudItem>
+                    <MudItem xs="4"> @_reportModel.GptElasticApprovedBy</MudItem>
+                    <MudItem xs="2"><b>Approved Date:</b> </MudItem>
+                    <MudItem xs="4"> @_reportModel.GptElasticApprovedDate</MudItem>
+
+                    <MudItem xs="2"><b>Zipper Report NO.:</b> </MudItem>
+                    <MudItem xs="4"> @_reportModel.ZipperRptNo</MudItem>
+                    <MudItem xs="2"><b>Zipper Status:</b> </MudItem>
+                    <MudItem xs="4"> @_reportModel.ZipperStatus </MudItem>
+
+                    <MudItem xs="2"><b>If fail(Zipper) Approved By:</b> </MudItem>
+                    <MudItem xs="4"> @_reportModel.ZipperApprovedBy</MudItem>
+                    <MudItem xs="2"><b>Approval Date:</b> </MudItem>
+                    <MudItem xs="4"> @_reportModel.ZipperApprovedDate</MudItem>
+
+                    <MudItem xs="2"><b>No. Of Bags/Carton:</b> </MudItem>
+                    <MudItem xs="4"> @_reportModel.NoOfBagsCartonsQty @_reportModel.NoOfBagsCartonsUnit</MudItem>
+                    <MudItem xs="2"><b>Packing Status:</b> </MudItem>
+                    <MudItem xs="4"> (100% Packed) - @_reportModel.PackingStatus</MudItem>
+
+                    <MudItem xs="2"><b>Inline Done:</b> </MudItem>
+                    <MudItem xs="4"> @_reportModel.InlineDone</MudItem>
+                    <MudItem xs="2"><b>Packing List:</b> </MudItem>
+                    <MudItem xs="4"> @_reportModel.PackingList</MudItem>
+
+                    <MudItem xs="2"><b>PPS Release Date:</b> </MudItem>
+                    <MudItem xs="4">@_reportModel.PpsReleaseDate</MudItem>
+                    <MudItem xs="2"><b>PPS Expiry Date:</b> </MudItem>
+                    <MudItem xs="4">@_reportModel.PpsExpiryDate</MudItem>
+
+                    <MudItem xs="2"><b>MFG Date:</b> </MudItem>
+                    <MudItem xs="4"> @_reportModel.MfgDate</MudItem>
+                    <MudItem xs="2"><b>Season:</b> </MudItem>
+                    <MudItem xs="2"> @_reportModel.Season</MudItem>
+                    <MudItem xs="2"> <b>Color Code:</b> @_reportModel.ColorCode</MudItem>
+
+                    <!-- FABRIC DETAILS -->
+                    <MudItem xs="2"><b>Fiber Content on</b> (PO Copy)</MudItem>
+                    <MudItem xs="4">@_reportModel.FiberContentOnPo</MudItem>
+                    <MudItem xs="2"><b>Fiber Content on </b>(Test Report) </MudItem>
+                    <MudItem xs="4">@_reportModel.FiberContentOnTestReport </MudItem>
+
+                    <MudItem xs="2"><b>Fiber Content on </b>W/C Label</MudItem>
+                    <MudItem xs="4">@_reportModel.FiberContentOnWc</MudItem>
+                    <MudItem xs="2"><b>GSM on </b>(PO Copy) </MudItem>
+                    <MudItem xs="4">@_reportModel.GsmOnPo </MudItem>
+
+                    <MudItem xs="2"> <b>GSM on</b>(Test Report) </MudItem>
+                    <MudItem xs="4">@_reportModel.GsmOnTestReport </MudItem>
+                    <MudItem xs="2"><b>GSM on</b> Bulk </MudItem>
+                    <MudItem xs="4">@_reportModel.GsmOnBulk </MudItem>
+
+                    <MudItem xs="2"><b>Selected Bags/Cartons No.</b> </MudItem>
+                    <MudItem xs="4">@_reportModel.SelectedBagCartonsNo </MudItem>
+                    <MudItem xs="2"> <b>FIT</b> </MudItem>
+                    <MudItem xs="4">@_reportModel.InspectionFit </MudItem>
+
+                    <MudItem xs="2"><b>Workmanship :</b> </MudItem>
+                    <MudItem xs="4"> @_reportModel.Workmanship</MudItem>
+                    <MudItem xs="2"><b>Fail Reason:</b> </MudItem>
+                    <MudItem xs="4"> @_reportModel.FailReason</MudItem>
+
+                    <MudItem xs="2"> <b>AQL</b> </MudItem>
+                    <MudItem xs="4">Major/Minor 2.5/2.5</MudItem>
+                    <MudItem xs="2"><b>AQL Sample Size </b>  </MudItem>
+                    <MudItem xs="4"> @_reportModel.AqlSampleSize PCS</MudItem>
+
+                    <!-- Conformity: PASS/FAIL table -->
+                    <MudItem xs="12" md="6">
+                        <MudSimpleTable Hover="true" Dense="true" Bordered="true" Striped="true">
+                            <ColGroup>
+                                <col style="width:auto" />
+                                <col style="width:150px" />
+                            </ColGroup>
+                            <thead>
+                                <tr>
+                                    <th>Conformity</th>
+                                    <th>PASS / FAIL</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Size :  @_reportModel.ConformitySize</td>
+                                    <td>@_reportModel.ConformitySizeStatus</td>
+                                </tr>
+                                <tr>
+                                    <td>Embriodery/Print (Should be as per PPS)</td>
+                                    <td>@_reportModel.EmbroideryPf</td>
+                                </tr>
+                                <tr>
+                                    <td>Accessories (Should be as per PPS)</td>
+                                    <td>@_reportModel.AccessoriesPf</td>
+                                </tr>
+                                <tr>
+                                    <td>Barcode Compliances </td>
+                                    <td>@_reportModel.BarcodePf</td>
+                                </tr>
+                                <tr>
+                                    <td>No Plastic Tag/Kimble/Tag </td>
+                                    <td>@_reportModel.NoPlasticPf</td>
+                                </tr>
+                                <tr>
+                                    <td>BOGO / Discount Tag </td>
+                                    <td>@_reportModel.BogoPf</td>
+                                </tr>
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudItem>
+
+                    <!-- Conformity: YES/NO table -->
+                    <MudItem xs="12" md="6">
+                        <MudSimpleTable Hover="true" Dense="true" Bordered="true" Striped="true">
+                            <ColGroup>
+                                <col style="width:auto" />
+                                <col style="width:150px" />
+                            </ColGroup>
+                            <thead>
+                                <tr>
+                                    <th>Conformity</th>
+                                    <th>YES / NO</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Pre-Pack Ratio :  @_reportModel.ConformityPrepack</td>
+                                    <td>@_reportModel.ConformityPrepackStatus</td>
+                                </tr>
+                                <tr>
+                                    <td>Thread From Nominated Vendor</td>
+                                    <td>@_reportModel.ThreadYn</td>
+                                </tr>
+                                <tr>
+                                    <td>Button From Nominated Vendor</td>
+                                    <td>@_reportModel.ButtonYn</td>
+                                </tr>
+                                <tr>
+                                    <td>Zipper From Nominated Vendor </td>
+                                    <td>@_reportModel.ZipperYn</td>
+                                </tr>
+                                <tr>
+                                    <td>Interlining From Nominated Vendor </td>
+                                    <td>@_reportModel.InterliningYn</td>
+                                </tr>
+                                <tr>
+                                    <td>Elastic From Nominated Vendor </td>
+                                    <td>@_reportModel.ElasticYn</td>
+                                </tr>
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudItem>
+                </MudGrid>
+
+                <MudDivider Class="my-3" />
+
+                <MudGrid>
+                    <!-- Measurement Sample Size & No. of Check Carton/Bags and Pre-Pack -->
+                    <MudItem xs="12" md="6">
+                        <MudSimpleTable Hover="true" Dense="true" Bordered="true" Striped="true">
+                            <ColGroup>
+                                <col style="width:auto" />
+                                <col style="width:300px" />
+                            </ColGroup>
+                            <thead>
+                                <tr>
+                                    <th colspan="2">Measurement Sample Size :- @_reportModel.MeasurementSampleQty PCS</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><b>WITHIN TOLERANCE</b></td>
+                                    <td> <b>PASS / FAIL</b></td>
+                                </tr>
+                                <tr>
+                                    <td>Measurement</td>
+                                    <td>@_reportModel.MeasurementSampleSizeResult</td>
+                                </tr>
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSimpleTable Hover="true" Dense="true" Bordered="true" Striped="true">
+                            <ColGroup>
+                                <col style="width:auto" />
+                                <col style="width:300px" />
+                            </ColGroup>
+                            <thead>
+                                <tr>
+                                    <th colspan="2"><b>No. of Check Carton/Bags and Pre-Pack</b></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Carton/ Bag No.</td>
+                                    <td>@_reportModel.NoOfCheck @_reportModel.NoOfCheckUnit OPEN</td>
+                                </tr>
+                                <tr>
+                                    <td>No. of Pre-Pack Check</td>
+                                    <td>@_reportModel.NoOfPrepackCheck PRE PACK</td>
+                                </tr>
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudItem>
+                </MudGrid>
+
+                <MudDivider Class="my-3" />
+
+                <!-- DEFECTS -->
+                <MudChip T="string" Variant="Variant.Outlined" Color="MudBlazor.Color.Secondary">Defects Observed </MudChip>
+                <MudTable T="DefectRowPdf" Items="_reportModel.Defects.OrderBy(d => d.SNo)" Hover="true" Dense="true" Bordered="true" Striped="true">
+                    <ColGroup>
+                        <col style="width:100px" />
+                        <col style="width:auto" />
+                        <col style="width:120px" />
+                        <col style="width:120px" />
+                        <col style="width:50px" />
+                    </ColGroup>
+
+                    <HeaderContent>
+                        <MudTh>SR.No.</MudTh>
+                        <MudTh>DEFECT</MudTh>
+                        <MudTh>MAJOR</MudTh>
+                        <MudTh>MINOR</MudTh>
+                        <MudTh>STATUS</MudTh>
+                    </HeaderContent>
+
+                    <RowTemplate>
+                        @if (context.DefectsId == 1001 || context.DefectsId == 1002)
+                            {
+                                <MudTd ColSpan="2"><b>@context.Defect</b></MudTd>
+                                <MudTd DataLabel="MAJOR"><b> @context.Major</b></MudTd>
+                                <MudTd DataLabel="MINOR"><b> @context.Minor</b></MudTd>
+                                <MudTd>
+                                    @if (context.DefectsId == 1002)
+                                    {
+                                        <MudChip T="string"
+                                                 Icon="@(context.Status == "PASS" ? Icons.Material.Filled.VerifiedUser : Icons.Material.Filled.Error)"
+                                                 Color="@(context.Status == "PASS" ? MudBlazor.Color.Success : MudBlazor.Color.Error)">
+                                            @context.Status
+                                        </MudChip>
+                                    }
+                                </MudTd>
+                            }
+                            else
+                            {
+                                <MudTd>@context.SNo</MudTd>
+                                <MudTd DataLabel="DEFECTS">@context.Defect</MudTd>
+                                <MudTd DataLabel="MAJOR">@context.Major</MudTd>
+                                <MudTd DataLabel="MINOR">@context.Minor</MudTd>
+                                <MudTd></MudTd>
+                            }
+                        </RowTemplate>
+                    </MudTable>
+
+                    <MudDivider Class="my-3" />
+
+                    <MudGrid>
+                        <MudItem xs="4"><b>FI Comm. Appr. Date :</b> @_reportModel.CommApprovalDate  </MudItem>
+                        <MudItem xs="4"> <b>FI Comm. Approved By : </b>@_reportModel.CommApprovedBy</MudItem>
+                        <MudItem xs="4"> <b>Comm. Approval Document(mail dated,debit etc.) : </b>@_reportModel.CommApprovalDoc</MudItem>
+                        <MudItem xs="4"> <b>Debit Amount : </b>@_reportModel.DebitAmount</MudItem>
+                        <MudItem xs="8"> <b>Admin Remark : </b>@_reportModel.AdminRemark</MudItem>
+                    </MudGrid>
+
+                    <MudDivider Class="my-3" />
+
+                    <!-- FOOTER -->
+                    <MudGrid Class="mt-4">
+                        <MudItem xs="12">
+                            <b> Fail/Remark Comment:</b> @_reportModel.RemarkComment
+                        </MudItem>
+                        <MudItem xs="12" Align="Align.Right">
+                            <b>NOTE - </b> @_reportModel.Note
+                        </MudItem>
+                        <MudItem xs="6">
+                            <b>Name of VMM QA:</b> @_reportModel.InspectorName<br />
+                        </MudItem>
+                        <MudItem xs="6" Align="Align.Right">
+                            <b>Name of the Factory Representative - </b> @_reportModel.FactoryRepresentative
+                        </MudItem>
+                    </MudGrid>
+
+                    <MudDivider Class="my-3" />
+
+                    <MudGrid Class="mt-4">
+
+                        <MudItem xs="12" md="12">
+                            @if (_reportModel.QADocuments.Count > 0)
+                            {
+                                <MudChip T="string" Variant="Variant.Text" Color="MudBlazor.Color.Success">QA Documents</MudChip>
+                                @foreach (var doc in _reportModel.QADocuments)
+                                {
+                                    <MudButton @onclick="@(() => OpenInNewTab(doc.Url))">@doc.Title</MudButton>
+                                }
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.caption">No QA documents attached.</MudText>
+                            }
+
+                        </MudItem>
+                        @if (_reportModel.Is_Edit_By_Admin && _reportModel.AdminDocuments.Count > 0)
+                        {
+                            <MudItem xs="12" md="12">
+                                <MudChip T="string" Variant="Variant.Text" Color="MudBlazor.Color.Secondary">Admin Documents</MudChip>
+                                @foreach (var doc in _reportModel.AdminDocuments)
+                                {
+                                    <MudButton @onclick="@(() => OpenInNewTab(doc.Url))">@doc.Title</MudButton>
+                                }
+                            </MudItem>
+                        }
+
+                    </MudGrid>
+
+                </MudPaper>
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Color="Color.Primary" OnClick="Close">Close</MudButton>
+        <MudButton OnClick="() => HandleExportClick()" StartIcon="@Icons.Material.Filled.Edit" Color="Color.Secondary" Variant="Variant.Text">Export Pdf</MudButton>
+    </DialogActions>
+</MudDialog>
+<MessageBox @ref="messageBox" />
+<Loader IsVisible="@IsLoading" />
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+    void Close() => MudDialog?.Close();
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadReportModel();
+    }
+    private async Task HandleExportClick()
+    {
+        await ExportToExcel("Pdf");
+    }
+}

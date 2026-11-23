@@ -1,0 +1,39 @@
+﻿@using Application.DTOs
+
+<div class="form-group">
+    <MudTextField @bind-Value="AuditState.Step15.OverallComments"
+                  Label="Overall Observations & Recommendations"
+                  Placeholder="Enter key findings, non-conformances, recommendations…"
+                  Lines="8"
+                  AutoGrow="true"
+                  MaxLines="15"
+                  Variant="Variant.Outlined"
+                  Disabled="@(CanSave)"
+                  MaxLength="2000" />
+
+    <span class="char-count">@((AuditState.Step15.OverallComments?.Length ?? 0)) / 2000</span>
+</div>
+
+<div class="step-actions">
+    <button class="btn-secondary" @onclick="() => OnBack.InvokeAsync()">← Back</button>
+    <button class="btn-primary" @onclick="Save">Save &amp; Review →</button>
+</div>
+
+@code {
+    [Parameter] public bool CanSave { get; set; }
+    [Parameter] public WizardStateDto AuditState { get; set; } = default!;
+    [Parameter] public EventCallback<OverallCommentsRequest> OnSave { get; set; }
+    [Parameter] public EventCallback OnBack { get; set; }
+
+    private async Task Save()
+    {
+        {
+            if (CanSave != false)
+            {
+                Snackbar.Add("Cannot save : Audit is already submitted.", Severity.Warning);
+                return;
+            }
+            await OnSave.InvokeAsync(AuditState.Step15);
+        }
+    }
+}

@@ -1,0 +1,218 @@
+﻿@using Admin.Components.Pages.UserMaster
+@using Admin.Components.Shared
+@using Application.Interfaces.V1.Notifications
+@using Application.Interfaces.V1.User
+@using Application.Notifications
+@using EmailService.Models
+@using MudExtensions
+@using System.Text.RegularExpressions
+@inject INotifier<VendorAccountModel> VendorAccountNotifier
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="form">
+            <MudGrid>
+                <MudItem xs="12" md="12">
+                    <MudGrid>
+                        <MudItem xs="12" md="3">
+                            <MudTextField @bind-Value="Vendor.Address" Label="Line Item"  FullWidth="true" AdornmentAriaLabel="Add Address" Required="true" />
+                        </MudItem>
+                        <MudItem xs="12" md="3">
+                            <MudTextField T="string" Label="Article" @bind-Value="Vendor.City" Required="true" />
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudTextField T="string" Label="Article Description" @bind-Value="Vendor.PostCode" Required="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="2">
+                            <MudTextField T="string" Label="Total Qty." @bind-Value="Vendor.RegionDescription" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="2">
+                            <MudTextField T="string" Label="Offered Qty." @bind-Value="Vendor.ContactNo" Required="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="8">
+                            <MudTextField @bind-Value="Vendor.Address" Label="Inspection Location" Multiline="true" FullWidth="true" AdornmentAriaLabel="Add Address" Required="true" />
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudTextField T="string" Label="Date of Inspection" @bind-Value="Vendor.EmailId" Required="true" />
+                        </MudItem>
+                       
+                    </MudGrid>
+                </MudItem>
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Save" Color="Color.Secondary" Variant="Variant.Outlined" EndIcon="@Icons.Material.Filled.PostAdd" Disabled="@isSubmitting">Update Line Item List</MudButton>
+        <MudButton OnClick="CloseDialog" Color="Color.Error" Variant="Variant.Filled">Cancel</MudButton>
+        <MudButton Variant="Variant.Outlined" EndIcon="@Icons.Material.Filled.PostAdd" Color="Color.Secondary" OnClick="AddToAddressList">Update Line Item</MudButton>
+    </DialogActions>
+</MudDialog>
+<Loader IsVisible="@IsLoading" />
+
+@code {
+    [Inject] protected ICurrentUserService _CurrentUser { get; set; } = default!;
+    bool isShow;
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+    public VendorDetail Vendor { get; set; } = new();
+    [Parameter]
+    public Vendor _vendor { get; set; } = new();
+    [Parameter] public bool IsEditMode { get; set; }
+    public bool IsMaked { get; set; } = false;
+
+    private bool isFatched { get; set; }
+
+    private MudForm form;
+    private bool isSubmitting = false;
+    bool IsLoading = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (_vendor != null)
+        {
+            Vendor.VendorCode = _vendor.VendorCode;
+            Vendor.VendorName = _vendor.VendorName;
+            Vendor.GSTNo = _vendor.GSTNo;
+            isFatched = IsEditMode;
+        }
+        else
+        {
+            _vendor = new();
+            isFatched = false;
+        }
+
+    }
+    
+   
+    private async void Save()
+    {
+
+        if (string.IsNullOrEmpty(_vendor.VendorCode))
+        {
+            await ShowErrorDialog("Validation", "Vendor Code & Vendor Name are required.");
+            return;
+        }
+        if (_vendor.VendorAddresses.Count == 0)
+        {
+            await ShowErrorDialog("Validation", "At least one address is required.");
+            return;
+        }
+
+
+        bool? dres = await DialogService.ShowMessageBox("Confirmation", "Do you want to save vendor details?", yesText: "  Yes!  ", cancelText: "   No   ");
+        if (dres == null)
+        {
+            return;
+        }
+        else
+        {
+            _vendor.CreatedBy = _CurrentUser.UserId;
+
+            var randomPassword = _passwordHasher.GenerateRandomPassword(8);
+            if (!IsEditMode)
+            {
+                _vendor.PassWord = _passwordHasher.HashPassword(randomPassword);
+            }
+
+            var res1 = await ApiMasterService.CallingAPI<GenRes, Vendor>(AllApiNames.SET_VENDOR!, _vendor);
+            if (res1.responseCode.Equals(0))
+            {
+                Snackbar.Add("Vendor record saved successfully.", Severity.Success);
+                if (!IsEditMode)
+                {
+                    await VendorAccountNotifier.NotifyAsync(new VendorAccountModel(_vendor, randomPassword, IsUpdate: false));
+                }
+ 
+                MudDialog?.Close();
+            }
+            else
+            {
+                await ShowErrorDialog("Error!", res1.responseMessage!);
+            }
+        }
+
+    }
+    private void CloseDialog()
+    {
+        MudDialog?.Close();
+    }
+    private async Task ShowErrorDialog(string Tital, string message)
+    {
+        await DialogService.ShowMessageBox(Tital, message);
+    }
+   
+    private async void AddToAddressList()
+    {
+        await form.Validate();
+
+        if (!string.IsNullOrEmpty(Vendor.EmailId))
+        {
+            List<string> emailIds = Vendor.EmailId.TrimEnd(';').Split(';', StringSplitOptions.RemoveEmptyEntries).Select(e => e.Trim()).ToList(); ;
+
+            foreach (var id in emailIds)
+            {
+                bool isValid = Regex.IsMatch(id, @"^[^@\s]+@[^@\s]+\.[^@\s]+$");
+                if (!isValid)
+                {
+                    await DialogService.ShowMessageBox("Info", $"Email-id '{id}' is invalid.");
+                    return;
+                }
+            }
+        }
+
+        if (form.IsValid)
+        {
+            var vendorDetails = _vendor.VendorAddresses.Where(p => p.AddressGUId == Vendor.VendorUId).FirstOrDefault();
+            if (vendorDetails != null)
+            {
+                vendorDetails.AddressLine1 = Vendor.Address;
+                vendorDetails.City = Vendor.City;
+                vendorDetails.PinCode = Vendor.PostCode;
+                vendorDetails.Region = Vendor.Region;
+                vendorDetails.RegionDescription = Vendor.RegionDescription;
+                vendorDetails.Mobile_Numbers = Vendor.ContactNo;
+                vendorDetails.Email_Ids = Vendor.EmailId;
+                vendorDetails.IsDefault = Vendor.IsDefault;
+            }
+            else
+            {
+                bool isexist = _vendor.VendorAddresses.Where(p => p.AddressLine1.Trim() == Vendor.Address.Trim()).Any();
+                if (!isexist)
+                {
+                    _vendor.VendorAddresses.Add(new VendorAddressDetail
+                    {
+                        AddressGUId = Guid.NewGuid(),
+                        AddressLine1 = Vendor.Address,
+                        City = Vendor.City,
+                        PinCode = Vendor.PostCode,
+                        Region = Vendor.Region,
+                        RegionDescription = Vendor.RegionDescription,
+                        Mobile_Numbers = Vendor.ContactNo,
+                        Email_Ids = Vendor.EmailId,
+                        IsDefault = Vendor.IsDefault
+                    });
+                }
+                else
+                {
+                    await DialogService.ShowMessageBox("Info", "Same address already exists in the list.");
+                    return;
+                }
+
+            }
+            Vendor.Address = "";
+            Vendor.VendorUId = Guid.Empty;
+            Vendor.City = "";
+            Vendor.PostCode = "";
+            Vendor.ContactNo = "";
+            Vendor.EmailId = "";
+            Vendor.IsDefault = false;
+            Vendor.Region = "";
+            Vendor.RegionDescription = "";
+            IsMaked = _vendor.VendorAddresses.Where(a => a.IsDefault == true).Any();
+            StateHasChanged();
+        }
+    }
+   
+}

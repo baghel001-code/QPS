@@ -1,0 +1,304 @@
+﻿@using Admin.Components.Shared
+@using System.Security.Claims
+@using Application.Interfaces.V1.User
+<div class="inspection-card @borderColorDefault">
+    <div class="card-header">
+        📅 @GetDisplayLabel(objdt.DOI) @* | @objdt.DOI.ToString("dd MMM yyyy") *@
+
+
+        <span class="total-count">
+            <MudChip T="string" OnClick="() => ExportToExcel()" Variant="Variant.Outlined" Color="Color.Secondary"> @objdt.TotalRequests</MudChip>
+        </span>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <span class="label">🔢 DoI Status @* Total Requests *@:</span>
+            <span class="value">
+                @*  @objdt.TotalRequests *@
+                <span title="View assigned inspection requests for this DOI?" class="assigned value clickable" @onclick="ViewAssignedDoIClicked">@objdt.QAMDOIAssigned</span> /
+                <span title="View pending inspection requests for this DOI?" class="pending value clickable" @onclick="OnPendingDoIClicked">@objdt.QAMDOIPending</span>
+            </span>
+        </div>
+
+        <div class="row pending">
+            <span class="label">⏳ Pending:</span>
+            <span title="View pending inspectors for this DOI?" class="value clickable" @onclick="OnPendingClicked">@objdt.Pending</span>
+        </div>
+
+        <div class="row assigned">
+            <span class="label">👤 Assigned:</span>
+            <span title="View assigned inspectors for this DOI?)" class="value clickable" @onclick="ViewAssignedClicked">@objdt.Assigned</span>
+        </div>
+    </div>
+
+
+    <div class="card-footer">
+        <div class="footer-actions">
+            @if (IsPending)
+            {
+                <button class="assign-btn" @onclick="OnAssignClicked">
+                    Assign DoI & Inspector
+                </button>
+            }
+            else
+            {
+                @if (!IsFinalized)
+                {
+                    if (_CurrentUser.IsQAAdmin)
+                    {
+                        <span style="width: 48%;">
+                            <button class="btn btn-outline-primary qpsbtn " style="width: 100%;" @onclick="OnAssignClicked">
+                                Assign
+                            </button>
+                        </span>
+                        <span style="width: 48%;">
+                            <button class="btn btn-outline-success" style="width: 100%;" @onclick="FreezeDoI">
+                                Freeze
+                            </button>
+                        </span>
+                    }
+                    else
+                    {
+                        <button class="assign-btn" @onclick="OnAssignClicked">
+                            Assign DoI & Inspector
+                        </button>
+                    }
+                }
+                else
+                {
+                    if (IsFinalized && _CurrentUser.IsQAAdmin)
+                    {
+                        <span style="width: 48%;">
+                            <button class="btn btn-outline-danger" style="width: 100%;" @onclick="OnAssignClicked">
+                                Change Date@* Change DoI & Inspector *@
+                            </button>
+                        </span>
+                        <span style="width: 48%;">
+                            <button class="btn btn-outline-success" style="width: 100%;" @onclick="FreezeDoI">
+                                Freeze
+                            </button>
+                        </span>
+                    }
+
+                    <span>Finalized by: @objdt.FinalizeBy</span>
+
+                    <span>Finalized on: @objdt.FreezeOn.ToString()</span>
+                }
+            }
+        </div>
+    </div>
+
+</div>
+<Loader IsVisible="@IsLoading" />
+<MessageBox @ref="messageBox" />
+
+@code {
+    [Inject] protected ICurrentUserService _CurrentUser { get; set; } = default!;
+
+    [Parameter] public DashboardDateSummary objdt { get; set; } = new();
+    [Parameter] public EventCallback OnAssignClicked { get; set; }
+    [Parameter] public EventCallback FreezeDoI { get; set; }
+    [Parameter] public EventCallback OnPendingClicked { get; set; }
+    [Parameter] public EventCallback ViewAssignedClicked { get; set; }
+    [Parameter] public EventCallback OnPendingDoIClicked { get; set; }
+    [Parameter] public EventCallback ViewAssignedDoIClicked { get; set; }
+    [Parameter] public EventCallback OnFinalizeClicked { get; set; }
+    [Parameter] public bool IsFinalized { get; set; }
+    [Parameter] public bool IsPending { get; set; } = false;
+   
+
+    private string borderColorDefault = "inspection-card-default";
+
+    string GetDisplayLabel(DateTime doi)
+    {
+        var today = DateTime.Today;
+
+        if (doi.Year == today.Year && doi.Month == today.Month)
+            return doi.ToString("dd MMM yyyy");
+
+        return doi.ToString("MMM yyyy");
+    }
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        borderColorDefault = objdt.TotalRequests == objdt.Assigned ? "inspection-card-Success" : "inspection-card-default";
+        StateHasChanged();
+    }
+
+    private MessageBox? messageBox;
+    private SelectListReq selectListReq = new();
+    bool IsLoading = false;
+   
+    private async Task ExportToExcel(string ExportType = "excel")
+    {
+        try
+        {
+            string message = "Would you like to download the " + ExportType + " file ?";
+            var res = await messageBox!.ShowAsync("Confirm", message, MessageBox.MessageBoxButton.YesNo);
+            if (res == MessageBox.MessageBoxResult.Yes)
+            {
+                var ReportType = ExportType;
+                selectListReq.Id = 0;
+                selectListReq.StrField = string.Join(',', objdt.INSP_IDS);
+                selectListReq.Cmd = "";
+
+                IsLoading = true;
+                StateHasChanged();
+                var result = await ApiMasterService.CallingAPI<string, SelectListReq>(AllApiNames.EXPORT_INSPECTIONS!, selectListReq);
+                if (!string.IsNullOrEmpty(result))
+                {
+                    if (ExportType == "Pdf")
+                    {
+                        await JS.InvokeVoidAsync("downloadBase64Pdf", result, "InspectionReport.pdf");
+                    }
+                    else
+                    {
+                        await JS.InvokeVoidAsync("downloadFileFromBase64", $"Inspections_{DateTime.Now.ToString("yyyyMMddHHmmss")}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", result);
+                    }
+                }
+            }
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+}
+<style>
+    .total-count {
+        margin-left: auto; /* moves span to the right  rgb(237 0 139)*/
+        color: black;
+        font-size: 12px;
+    }
+
+    .inspection-card {
+        width: 300px;
+        border-radius: 12px;
+        background: #ffffff;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+
+    .inspection-card-default {
+        box-shadow: 3px 3px 7px -3px rgb(249 0 186);
+        border-color: #c8e5e9;
+        border-width: 1px thin;
+    }
+
+    .inspection-card-Success {
+        box-shadow: 3px 3px 7px -3px rgb(0 255 12);
+        border-color: #c8e5e9;
+        border-width: 1px thin;
+    }
+
+    .card-header {
+        display: flex;
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 12px;
+    }
+
+    .card-body .row {
+        display: flex;
+        justify-content: space-between;
+        margin: 6px 0;
+        font-size: 14px;
+        flex-wrap: nowrap !important;
+    }
+
+    .label {
+        font-weight: 500;
+        width: 60% !important;
+    }
+
+    .value {
+        font-weight: 600;
+        width: 40% !important;
+    }
+
+    /* 🔴 Pending in Red */
+    .pending {
+        color: #d32f2f;
+    }
+
+    /* 🟢 Assigned in Green */
+    .assigned {
+        color: #2e7d32;
+    }
+
+    .card-footer {
+        margin-top: 14px;
+        text-align: left;
+    }
+
+    .qpsbtn {
+        border-color: #1976d2 !important;
+        background-color: #1976d2 !important;
+        color: white !important;
+    }
+
+        .qpsbtn:hover {
+            background-color: #125aa3 !important;
+        }
+
+    .assign-btn {
+        width: 100%;
+        padding: 8px;
+        border-radius: 8px;
+        border-color: #1976d2;
+        background-color: #1976d2;
+        border: none;
+        color: white;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+        .assign-btn:hover {
+            background-color: #125aa3;
+        }
+
+    .clickable {
+        cursor: pointer;
+    }
+
+        .clickable:hover {
+            text-decoration: underline;
+            color: var(--mud-palette-primary);
+        }
+
+    .assign-btn-f {
+        width: 100%;
+        padding: 8px;
+        border-radius: 8px;
+        border: none;
+        background-color: #db008a;
+        color: white;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+        .assign-btn-f:hover {
+            background-color: #b00561;
+        }
+
+    .footer-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px; /* space between buttons */
+        flex-wrap: wrap; /* responsive on small screens */
+    }
+
+    .freeze-btn {
+        background-color: #1e73be;
+    }
+
+    .final-info {
+        font-size: 12px;
+        color: #555;
+    }
+
+</style>

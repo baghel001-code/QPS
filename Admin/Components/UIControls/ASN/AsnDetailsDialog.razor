@@ -1,0 +1,146 @@
+﻿<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.ListAlt" Class="mr-2" />
+            <MudText Typo="Typo.h6">ASN Details</MudText>
+        </div>
+    </TitleContent>
+
+    <DialogContent>
+        <!-- PO summary strip -->
+        <MudPaper Outlined="true" Class="pa-3 mb-4" Style="background-color:#f7f8fa; border-radius:8px;">
+            <MudGrid>
+                <MudItem xs="6" sm="6">
+                    <MudText Typo="Typo.caption" Style="color:#6b7280;">PO Number</MudText>
+                    <MudText Typo="Typo.subtitle1" Style="font-weight:600;">@Summary.PoNumber</MudText>
+                </MudItem>
+                <MudItem xs="6" sm="2">
+                    <MudText Typo="Typo.caption" Style="color:#6b7280;">Total ASN</MudText>
+                    <MudText Typo="Typo.subtitle1" Style="font-weight:600; color:#1b3a6b;">
+                        @Summary.TotalAsnInCurrentPo
+                    </MudText>
+                </MudItem>
+                <MudItem xs="6" sm="2">
+                    <MudText Typo="Typo.caption" Style="color:#6b7280;">Completed ASN</MudText>
+                    <MudText Typo="Typo.subtitle1" Style="font-weight:600; color:#1b3a6b;">
+                        @Summary.CompleteAsnInCurrentPo
+                    </MudText>
+                </MudItem>
+                <MudItem xs="6" sm="2">
+                    <MudText Typo="Typo.caption" Style="color:#6b7280;">Pending ASN</MudText>
+                    <MudText Typo="Typo.subtitle1" Style="font-weight:600; color:#1b3a6b;">
+                        @Summary.PendingAsnInCurrentPo
+                    </MudText>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <!-- Grouped by inspection -->
+        <MudExpansionPanels MultiExpansion="true" Elevation="0">
+            @foreach (var insp in Summary.Inspections)
+            {
+                <MudExpansionPanel Class="mb-2" Style="border:1px solid #e5e7eb; border-radius:8px;">
+                    <TitleContent>
+                        <div class="d-flex align-center justify-space-between" style="width:100%;">
+                            <MudGrid>
+                                <MudItem xs="6" sm="3">
+                                    <div>
+                                        <MudIcon Icon="@Icons.Material.Filled.FactCheck" Size="Size.Small" Class="mr-2" Style="color:#1b3a6b;" />
+                                        <b>Insp# : @insp.InspectionNumber</b>
+                                    </div>
+                                </MudItem>
+                                <MudItem xs="6" sm="2">
+                                    <MudChip T="string" Size="Size.Medium" Color="Color.Primary" Variant="Variant.Outlined">
+                                        Ship Qty :  <b> @insp.ShipQty.ToString("N0")</b>
+                                    </MudChip>
+                                </MudItem>
+                                <MudItem xs="6" sm="2">
+                                    <MudChip T="string" Size="Size.Medium" Color="Color.Success" Variant="Variant.Outlined">
+                                        Total ASN Qty : <b> @insp.TotalAsnQty.ToString("N0")</b>
+                                    </MudChip>
+                                </MudItem>
+                                <MudItem xs="6" sm="2">
+                                    <MudChip T="string" Size="Size.Medium" Color="Color.Secondary" Variant="Variant.Outlined">
+                                        Balance Qty :   <b> @insp.BalanceQty.ToString("N0")</b>
+                                    </MudChip>
+                                </MudItem>
+                                <MudItem xs="6" sm="1">
+                                    <MudChip T="string" Size="Size.Medium" Color="Color.Info" Variant="Variant.Outlined">
+                                        Total ASN :   <b> @insp.TotalAsnInCurrentInspection.ToString("N0")</b>
+                                    </MudChip>
+                                </MudItem>
+                                <MudItem xs="6" sm="1">
+                                    <MudChip T="string" Size="Size.Medium" Color="Color.Success" Variant="Variant.Outlined">
+                                        Completed :   <b> @insp.CompletedAsnInCurrentInspection.ToString("N0")</b>
+                                    </MudChip>
+                                </MudItem>
+                                <MudItem xs="6" sm="1">
+                                    <MudChip T="string" Size="Size.Medium" Color="Color.Secondary" Variant="Variant.Outlined">
+                                        Pending :   <b> @insp.PendingAsnInCurrentInspection.ToString("N0")</b>
+                                    </MudChip>
+                                </MudItem>
+
+                            </MudGrid>
+                        </div>
+                    </TitleContent>
+                    <ChildContent>
+                        <MudTable Items="@insp.Rows" Dense="true" Hover="true" Elevation="0" Class="mt-2">
+                            <HeaderContent>
+                                <MudTh>SNO</MudTh>
+                                <MudTh>Requested Qty</MudTh>
+                                <MudTh>ASN Number</MudTh>
+                                <MudTh>Date of Creation</MudTh>
+                                <MudTh>Balance Qty</MudTh>
+                                <MudTh>Status</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="SNO">@context.Sno</MudTd>
+                                <MudTd DataLabel="Requested Qty">@context.RequestedQty.ToString("N0")</MudTd>
+                                <MudTd DataLabel="ASN Number">
+                                    @if (!string.IsNullOrWhiteSpace(context.AsnNumber) && !string.IsNullOrWhiteSpace(context.ASN_ATTACHMENT))
+                                    {
+                                        <MudChip T="string" OnClick="() => GetASNDoc(context.ASN_ATTACHMENT)" Variant="Variant.Filled" Color="Color.Success">
+                                            @context.AsnNumber
+                                        </MudChip>
+                                    }
+                                </MudTd>
+                                <MudTd DataLabel="Date of Creation">@context.DateOfCreation.ToString("dd MMM yyyy")</MudTd>
+                                <MudTd DataLabel="Balance Qty">@context.BalanceQty.ToString("N0")</MudTd>
+                                <MudTd DataLabel="Status">
+                                    <MudChip T="string"
+                                             Size="Size.Small"
+                                             Color="@(context.Status == "Completed" ? Color.Success : Color.Warning)"
+                                             Variant="Variant.Filled">
+                                        @context.Status
+                                    </MudChip>
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    </ChildContent>
+                </MudExpansionPanel>
+            }
+        </MudExpansionPanels>
+
+        @if (!Summary.Inspections.Any())
+        {
+            <MudAlert Severity="Severity.Info" Class="mt-2">No ASN records found for this PO.</MudAlert>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Close">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public AsnDetailsSummary Summary { get; set; } = new();
+
+    private void Close() => MudDialog.Close();
+    private void GetASNDoc(string path)
+    {
+        
+        JS.InvokeVoidAsync("open", path, "_blank");
+        
+    }
+}

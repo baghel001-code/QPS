@@ -1,0 +1,254 @@
+﻿@inherits QpsPageBase
+@page "/HierarchyList"
+@using Admin.Components.Shared
+@using Admin.Components.UIControls
+@using System.Security.Claims
+@using Admin.Components.UIControls.BaseComponents
+@attribute [Authorize(Policy = "InspectionRequestAccess")]
+
+<MudGrid Class="justify-end">
+    <MudItem>
+        <MudBreadcrumbs Items="_items">
+            <ItemTemplate Context="item">
+                <MudLink Href="@item.Href">@item.Text.ToUpper()</MudLink>
+            </ItemTemplate>
+        </MudBreadcrumbs>
+    </MudItem>
+</MudGrid>
+
+<MudStack Row="true" AlignItems="AlignItems.End" Justify="Justify.FlexEnd" Class="mb-2">
+    @if (_CurrentUser.IsQAAdmin)
+    {
+        <MudButton OnClick="() => OpenRoleDialog()" StartIcon="@Icons.Material.Filled.Add" Variant="Variant.Filled" Color="Color.Secondary">
+            Add New User
+        </MudButton>
+    }
+</MudStack>
+<MudTable Items="filteredPO" @ref="mudTable" Dense="true">
+    <ToolBarContent>
+        <MudSpacer />
+        <MudTextField T="string" Value="@searchQuery" ValueChanged="OnSearchChanged" Placeholder="Search" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>EMP NAME</MudTh>
+        <MudTh>EMAIL</MudTh>
+        <MudTh>MOBILE</MudTh>
+        <MudTh>ROLE</MudTh>
+        <MudTh>REPORTING TO</MudTh>
+        <MudTh>ACTIVE</MudTh>
+        <MudTh>CREATED AT</MudTh>
+        <MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.EmpName (@context.EmpCode)</MudTd>
+        @*    <MudTd>
+            <MudChip T="string" OnClick="() => ViewReport(context)" Variant="Variant.Outlined" Color="Color.Secondary"> @(context.InspectionNo)  </MudChip>
+        </MudTd> *@
+        <MudTd>@(context.EmailId)</MudTd>
+        <MudTd>@(context.MobileNo)</MudTd>
+        <MudTd>@(context.RoleName)</MudTd>
+        <MudTd>
+            @(string.IsNullOrWhiteSpace(context.ReportingManager)
+                        ? ""
+                        : $"{context.ReportingManager} ({context.ReportingEmpId})")
+        </MudTd>
+        <MudTd>@(context.IsActive)</MudTd>
+        <MudTd>@(context.CreatedOn.ToString("dd-MM-yyyy HH:mm") ?? "")</MudTd>
+        <MudTd>
+            <MudButton OnClick="() => OpenRoleDialog(context)" StartIcon="@Icons.Material.Filled.Update" Color="Color.Success" Variant="Variant.Text" />
+        </MudTd>
+    </RowTemplate>
+    <LoadingContent>
+        <MudText>Loading...</MudText>
+    </LoadingContent>
+    <NoRecordsContent>
+        <MudText>No records found</MudText>
+    </NoRecordsContent>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="@pageSizeOptions" />
+    </PagerContent>
+</MudTable>
+<Loader IsVisible="@IsLoading" />
+
+
+
+@code {
+    [Inject] protected IFetchMasterList _fetchMasterList { get; set; } = default!;
+    private SelectListReq selectListReq = new();
+    private List<HierarchyDto> filteredPO = new();
+    private List<HierarchyDto> pagedPO = new(); // Users to be shown on the current page
+
+    private List<DashboardDateSummary> dashboardDateSummary = new();
+    private MudTable<HierarchyDto> mudTable;
+    private string searchQuery = string.Empty;
+    private int pageSize => 50; // Items per page
+    bool IsLoading = false;
+    private int[] pageSizeOptions => new[]
+    {
+        pageSize * 1,
+        pageSize * 2,
+        pageSize * 3,
+        pageSize * 4,
+        pageSize * 5
+    };
+    private int currentPage = 0; // Current page index
+
+    private List<BreadcrumbItem> _items = new List<BreadcrumbItem>
+    {
+        new BreadcrumbItem("Home", href: "/InspectionList"),
+        new BreadcrumbItem("PO List", href: "#", disabled: true)
+    };
+    protected override Task OnUserInitializedAsync()
+    {
+        return Task.CompletedTask;
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await GetPOs();
+
+            StateHasChanged();
+        }
+
+    }
+
+    private async Task GetPOs()
+    {
+        pagedPO = new();
+        selectListReq.Id = 0;
+        selectListReq.StrField = _CurrentUser.UserCode;
+        selectListReq.Cmd = "GETALL";
+
+        IsLoading = true;
+        var res = await ApiMasterService.CallingAPI<HierarchyListResponse, SelectListReq>(AllApiNames.GET_ALL_HIERARCHY_LIST, selectListReq);
+        IsLoading = false;
+
+        if (res.responseCode == 0)
+        {
+            if (res.HierarchyList == null)
+            {
+                Snackbar.Add("No record found.", Severity.Error);
+            }
+            else
+            {
+                foreach (var item in res.HierarchyList)
+                {
+                    pagedPO.Add(mapper.Map<HierarchyDto>(item));
+                }
+            }
+        }
+        else
+        {
+            Snackbar.Add(res.responseMessage!, Severity.Error);
+        }
+        filteredPO = pagedPO;
+    }
+    private void OnSearchChanged(string searchQuery)
+    {
+        this.searchQuery = searchQuery;
+        FilterPOs(); // Apply search filter
+    }
+    private void FilterPOs()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            filteredPO = pagedPO; // Show all Users if search is empty
+        }
+        else
+        {
+
+            filteredPO = pagedPO.Where(a =>
+                                       a.EmpCode?.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) == true ||
+                                       a.EmpName?.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) == true ||
+                                       a.EmailId?.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) == true
+                                       ).ToList();
+
+            ApplyPaging(); // Re-apply pagination after search
+        }
+    }
+    private void ApplyPaging()
+    {
+        var startIndex = currentPage * pageSize;
+        filteredPO = filteredPO.Skip(startIndex).Take(pageSize).ToList(); // Paginate the filtered Users
+    }
+    private void OnPageChanged(int newPage)
+    {
+        currentPage = newPage;
+        ApplyPaging(); // Update paged users when the page is changed
+    }
+    private async Task OpenRoleDialog(HierarchyDto? Obj = null)
+    {
+        bool IsEdit = true;
+        if (Obj == null)
+        {
+            Obj = new HierarchyDto();
+            IsEdit = false;
+        }
+        var regionList = (await _fetchMasterList.FetchMasterList(CmdNames.Get_ReportingManager_Master));
+        if (regionList.responseCode == 0 && regionList.responseMessage!.ToUpper() == "SUCCESS")
+        {
+            MasterDataList regionList1 = regionList;
+            Obj.ReportingManagerList = regionList1.masterDataList;
+        }
+
+        IsLoading = true;
+        var roleList = await _fetchMasterList.FetchMasterList(CmdNames.Get_Hierarchy_Roles_List);
+        IsLoading = false;
+        MasterDataList regionList2 = roleList;
+        Obj.RoleList = regionList2.masterDataList;
+
+        var parameters = new DialogParameters
+        {
+            { "Dto",  Obj  },
+            {"IsEdit", IsEdit}
+        };
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+
+        if (_CurrentUser.IsQAAdmin)
+        {
+            var dialog = DialogService.Show<HierarchyAddEdit>("Hierarchy Add/Update Form", parameters, options);
+            var result = await dialog.Result;
+            if (!result!.Canceled)
+            {
+                await GetPOs();
+            }
+        }
+
+    }
+
+
+}
+<style>
+    .mud-table-container {
+        max-height: 48vh;
+    }
+
+    .mud-table th {
+        background-color: #d92160;
+        color: white !important;
+        font-weight: bold !important;
+        font-size: 15px;
+    }
+
+    .inspection-grid {
+        display: grid;
+        grid-auto-flow: column; /* 👈 column-first */
+        grid-template-columns: repeat(4, auto); /* number of rows per column */
+        gap: 16px;
+    }
+</style>
+<style>
+
+    .mud-dialog-title {
+        color: white !important;
+        background: linear-gradient(to right, #0e6cb1, #ffffff) !important;
+    }
+
+    .mud-dialog-actions {
+        background: linear-gradient(to right, #3b7ed12b, #ffffff) !important
+    }
+
+</style>
+

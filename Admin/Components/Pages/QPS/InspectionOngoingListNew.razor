@@ -1,0 +1,171 @@
+﻿@inherits DashboardBase
+@page "/OngoingInspections"
+@using Admin.Components.Shared
+@using Admin.Components.UIControls
+@using System.Security.Claims
+@using Admin.Components.UIControls.BaseComponents
+@using Admin.Components.UIControls.SearchFilters
+@using ClosedXML.Excel
+@attribute [Authorize]
+
+<MudGrid Class="justify-end">
+    <MudItem>
+        <MudBreadcrumbs Items="_items">
+            <ItemTemplate Context="item">
+                <MudLink Href="@item.Href">@item.Text.ToUpper()</MudLink>
+            </ItemTemplate>
+        </MudBreadcrumbs>
+    </MudItem>
+</MudGrid>
+
+@if (_CurrentUser.IsQAM || _CurrentUser.IsQAAdmin)
+{
+    <MudChip T="string" Variant="Variant.Outlined" Color="Color.Primary">Total Ongoing Inspection Request :<b> @dashboardDateSummary.Sum(i => i.TotalRequests)</b></MudChip>
+
+    <MudGrid Class="justify-content-evenly">
+
+        @foreach (var item in dashboardDateSummary)
+        {
+            <MudItem>
+                <InspectionDateCard objdt=item
+                                    OnAssignClicked="() => OpenAssignScreen(string.Join(',', item.INSP_IDS),string.Join(',', item.REGION_IDS))"
+                                    ViewAssignedClicked="() => ViewAssignScreen(string.Join(',', item.View_Assigned_INSP_IDS),QA)"
+                                    OnPendingClicked="() => ViewPendingScreen(string.Join(',', item.View_Pendiing_INSP_IDS),QA)"
+                                    ViewAssignedDoIClicked="() => ViewAssignScreen(string.Join(',', item.View_Assigned_DOI_INSP_IDS),DoI)"
+                                    OnPendingDoIClicked="() => ViewPendingScreen(string.Join(',', item.View_Pending_DOI_INSP_IDS),DoI)"
+                                    IsFinalized=item.IsFreeze IsPending=true />
+            </MudItem>
+        }
+
+    </MudGrid>
+}
+else
+{
+    <MudButton OnClick="() => ExportToExcel()" StartIcon="@Icons.Material.Filled.Edit" Color="Color.Secondary" Variant="Variant.Text">Export to Excel</MudButton>
+    <InspectionSearchBarFilterableMultiSelection Filter="_filter" OnSearch="HandleSearchMultiSelect" />
+    <MudSpacer></MudSpacer>
+    <MudTable Items="filteredPO" @ref="mudTable" Dense="true" FixedHeader="true" Height="700px" Loading="@IsLoading" RowsPerPage="@_filter.PageSize">
+        <HeaderContent>
+            @if (_CurrentUser.IsQA)
+            {
+                <MudTh>ACTION</MudTh>
+            }
+            <MudTh>INSPECTION NUMBER</MudTh>
+            <MudTh>PO NUMBER</MudTh>
+            <MudTh>BUYER</MudTh>
+            @if (_CurrentUser.IsBuyer || _CurrentUser.IsMerchandiser)
+            {
+                <MudTh>INSPECTOR</MudTh>
+            }
+            <MudTh>VENDOR</MudTh>
+            <MudTh>CATEGORY</MudTh>
+            <MudTh>PRODUCT</MudTh>
+            <MudTh>COLOR</MudTh>
+            <MudTh>MRP</MudTh>
+            <MudTh>FABRIC</MudTh>
+            <MudTh>OFFERED QTY.</MudTh>
+            <MudTh>TOTAL QTY.</MudTh>
+            <MudTh>DATE OF INSPECTION</MudTh>
+            <MudTh>DATE ASSIGNED BY QAM</MudTh>
+            <MudTh>INSPECTION LOCATION</MudTh>
+            <MudTh>CREATED AT</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            @if (_CurrentUser.IsQA && context.INSPECTOR_EMP_CODE.ToString() == _CurrentUser.UserCode)
+            {
+                <MudTd>
+                    <MudButton OnClick="() => UpdateInspectionDialog(context)" StartIcon="@Icons.Material.Filled.Update" Color="Color.Success" Variant="Variant.Text" />
+                </MudTd>
+            }
+
+            <MudTd>@(context.INSPECTION_REPORT_NO)</MudTd>
+            <MudTd>
+                <MudChip T="string" Variant="Variant.Outlined" Color="Color.Primary"> @(context.PO_NUMBER_WITH_LINK_PO_NUMBER)  </MudChip>
+            </MudTd>
+            <MudTd>@(context.BUYER_NAME)</MudTd>
+            @if (_CurrentUser.IsBuyer || _CurrentUser.IsMerchandiser)
+            {
+                <MudTd>@(context.INSPECTOR) </MudTd>
+            }
+            <MudTd>@(context.VENDOR)</MudTd>
+            <MudTd>@(context.CATEGORY)</MudTd>
+            <MudTd>@(context.DESCRIPTION)</MudTd>
+            <MudTd>@(context.COLOR)</MudTd>
+            <MudTd>@(context.MRP)</MudTd>
+            <MudTd>@(context.FABRIC)</MudTd>
+            <MudTd>@(context.OFFERED_QTY)</MudTd>
+            <MudTd>@(context.PO_QTY)</MudTd>
+            <MudTd>@(context.DATE_OF_INSPECTION)</MudTd>
+            <MudTd>
+                <MudChip T="string" Variant="Variant.Outlined" Color="Color.Success"> @(context.QA_ASSIGNED_DOI)  </MudChip>
+            </MudTd>
+            <MudTd>@context.ADDRESS</MudTd>
+            <MudTd>@(context.CREATED_ON.ToString("dd-MM-yyyy HH:mm:ss tt") ?? "")</MudTd>
+        </RowTemplate>
+        <LoadingContent>
+            <MudText>Loading...</MudText>
+        </LoadingContent>
+        <NoRecordsContent>
+            <MudText>No records found</MudText>
+        </NoRecordsContent>
+        <PagerContent>
+            <div style="width: 100%;">
+                <PagerControl PageNumber="_filter.PageNumber" PageSize="_filter.PageSize" TotalCount="_totalCount" Loading="IsLoading" PageChanged="OnPageChanged" PageSizeChanged="OnPageSizeChanged" />
+            </div>
+        </PagerContent>
+    </MudTable>
+}
+<Loader IsVisible="@IsLoading" />
+<MessageBox @ref="messageBox" />
+
+
+
+@code {
+    protected override string ListTypeCmd => "ALL_LIST";
+    protected override string SubType => "ONGOING";
+    protected override Dictionary<string, string> RoleCmdMap => new()
+    {
+        ["Admin"] = "GET_ALL_RECEIVED_PENDING_ONGOING_INSPECTIONS",
+        ["Buyer"] = "GET_BUYER_WISE_ALL_RECEIVED_PENDING_ONGOING_INSPECTIONS",
+        ["Vendor"] = "GET_VENDOR_WISE_ALL_RECEIVED_PENDING_ONGOING_INSPECTIONS",
+        ["QA"] = "GET_QA_WISE_INSPECTIONS_ALL_RECEIVED_PENDING_ONGOING_INSPECTIONS"
+    };
+    private List<BreadcrumbItem> _items = new List<BreadcrumbItem>
+    {
+        new BreadcrumbItem("All Inspection Requests", href: "/AllRecPenOngInspections",disabled: true),
+        new BreadcrumbItem("Ongoing Inspections", href: "#", disabled: true)
+    };
+
+}
+
+<style>
+    .mud-table-container {
+        max-height: 48vh;
+    }
+</style>
+<style>
+    .mud-breadcrumbs {
+        padding: 12px 12px;
+    }
+
+    /* Target MudTable header row */
+    .mud-table thead tr th {
+        background-color: #ed008b !important;
+        color: #ffffff !important;
+        font-weight: bold !important;
+    }
+
+    .mud-table-cell {
+        padding-inline-start: 5px !important;
+        padding-inline-end: 5px !important;
+    }
+
+    .highlight {
+        background-color: yellow;
+        color: darkblue;
+        font-weight: bold;
+    }
+
+</style>
+
+

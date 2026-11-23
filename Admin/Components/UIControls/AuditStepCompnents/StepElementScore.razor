@@ -1,0 +1,88 @@
+﻿@using Application.DTOs
+@using Domain.ValueObjects
+
+@if (Element is not null)
+{
+    var scores = AuditState.ElementSteps.FirstOrDefault(e => e.ElementId == Element.ElementId);
+    @if (scores is not null)
+    {
+        <div class="rating-legend">
+            @foreach (var (v, lbl) in new[] { (0, "N/A"), (2, "Poor"), (4, "Below Avg"), (6, "Average"), (8, "Good"), (10, "Excellent") })
+            {
+                <div class="rl-item"><span class="rl-chip s@(v)">@v</span><span>@lbl</span></div>
+            }
+        </div>
+
+        <div class="cp-list">
+            @foreach (var cp in Element.CheckPoints)
+            {
+                var row = scores.CheckPoints.FirstOrDefault(c => c.CheckPointId == cp.CheckPointId);
+                @if (row is not null)
+                {
+                    <div class="cp-row @(cp.IsCritical ? "critical" : "")">
+                        <div class="cp-q">
+                            @if (cp.IsCritical)
+                            {
+                                <span class="crit-tag">⚠️ Critical</span>
+                            }
+                            @cp.CheckPointNo. @cp.Question
+                        </div>
+                        <div class="cp-scores">
+                            @foreach (var s in new[] { 0, 2, 4, 6, 8, 10 })
+                            {
+                                var sv = s;
+                                <button type="button" disabled="@CanSave" class="sc-btn @(row.Score == sv ? $"sel s{sv}" : "")" @onclick="() => row.Score = row.Score == sv ? null : sv" title="@CheckPointScoreValue.GetLabel(sv)">
+                                    @sv
+                                </button>
+                            }
+                        </div>
+                        <input class="fc-sm rmk" placeholder="Remarks" disabled="@CanSave" @bind="row.Remarks" />
+                    </div>
+                }
+            }
+        </div>
+
+        <div class="element-summary-bar">
+            @{
+                var rated = scores.CheckPoints.Count(c => c.Score.HasValue);
+                var total = scores.CheckPoints.Count;
+                var avg = rated > 0 ? scores.CheckPoints.Where(c => c.Score.HasValue).Average(c => (double)c.Score!) : 0;
+            }
+            <span>Rated: <strong>@rated / @total</strong></span>
+            @if (rated > 0)
+            {
+                <span>Avg Score: <strong>@avg.ToString("F1")</strong></span>
+            }
+        </div>
+
+        <div class="step-actions">
+            <button class="btn-secondary" @onclick="() => OnBack.InvokeAsync()">← Back</button>
+            <button class="btn-primary" @onclick="() => Save(scores)">
+                Save &amp; @(Element.ElementNo < 10 ? $"Next: {NextElementName()} →" : "Next: Attachments →")
+            </button>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public bool CanSave { get; set; }
+    [Parameter] public WizardStateDto AuditState { get; set; } = default!;
+    [Parameter] public KeyElementResponse? Element { get; set; }
+    [Parameter] public EventCallback<ElementScoresRequest> OnSave { get; set; }
+    [Parameter] public EventCallback OnBack { get; set; }
+
+    private string NextElementName() => Element is null ? string.Empty : WizardStateDto.GetStepLabel(WizardStateDto.ElementToWizardStep(Element.ElementNo) + 1);
+
+    private async Task Save(ElementScoresRequest scores)
+    {
+        {
+            // ── Validate FIRST before any disk operation ───────────────────────
+            if (CanSave != false)
+            {
+                Snackbar.Add("Cannot save : Audit is already submitted.", Severity.Warning);
+                return;
+            }
+            await OnSave.InvokeAsync(scores);
+        }
+    }
+}

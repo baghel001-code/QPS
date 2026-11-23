@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.105.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" Version="8.0.30" />
+    <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.2.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Http.Extensions" Version="2.1.21" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.2" />
+    <PackageReference Include="Microsoft.JSInterop" Version="8.0.10" />
+	
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Domain\Domain.csproj" />
+    <ProjectReference Include="..\Minimapper\Minimapper.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="EmailService">
+      <HintPath>..\Dependencies\EmailService\EmailService.dll</HintPath>
+    </Reference>
+    <Reference Include="MyNewEncDec">
+      <HintPath>..\Dependencies\MyNewEncDec\MyNewEncDec.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>

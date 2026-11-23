@@ -1,0 +1,235 @@
+﻿@inherits QpsPageBase
+@page "/QAMaster"
+@using Admin.Components.UIControls
+@using Admin.Components.UIControls.BaseComponents
+@using Application.Interfaces.V1.User
+@attribute [Authorize(Policy = "InspectionRequestAccess")]
+<MudGrid Class="justify-end">
+    <MudItem>
+        <MudBreadcrumbs Items="_items">
+            <ItemTemplate Context="item">
+                <MudLink Href="@item.Href">@item.Text.ToUpper()</MudLink>
+            </ItemTemplate>
+        </MudBreadcrumbs>
+    </MudItem>
+</MudGrid>
+<MudStack Row="true" AlignItems="AlignItems.End" Justify="Justify.FlexEnd" Class="mb-2">
+    <MudButton OnClick="() => OpenRoleDialog()" StartIcon="@Icons.Material.Filled.Add" Variant="Variant.Filled" Color="Color.Secondary">
+        Add New QA
+    </MudButton>
+</MudStack>
+<MudTable Items="filteredUsers" @ref="mudTable" Dense="true">
+    <ToolBarContent>
+        <MudSpacer />
+        <MudTextField T="string" Value="@searchQuery" ValueChanged="OnSearchChanged" Placeholder="Search" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>Emp Code</MudTh>
+        <MudTh>Emp Name</MudTh>
+        <MudTh>Contact No</MudTh>
+        <MudTh>Mail Id</MudTh>
+        <MudTh>Designation</MudTh>
+        <MudTh>Role</MudTh>
+        <MudTh>Location</MudTh>
+        <MudTh>Active</MudTh>
+        <MudTh>Actions</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.Emp_Code</MudTd>
+        <MudTd>@(context.Emp_Name)</MudTd>
+        <MudTd>@(context.Emp_Contact_No)</MudTd>
+        <MudTd>@(context.Emp_Mail_Id)</MudTd>
+        <MudTd>@(context.Emp_Desig)</MudTd>
+        <MudTd>@(context.Role_Name)</MudTd>
+        <MudTd>@(context._rgnName)</MudTd>
+        <MudTd>@(context.Emp_Status)</MudTd>
+        <MudTd>
+            <MudButton OnClick="() => OpenRoleDialog(context)" StartIcon="@Icons.Material.Filled.Edit" Color="Color.Secondary" Variant="Variant.Text" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>No matching records found</MudText>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading...</MudText>
+    </LoadingContent>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="@pageSizeOptions" />
+    </PagerContent>
+</MudTable>
+
+
+
+@code {
+    [Inject] protected IFetchMasterList _fetchMasterList { get; set; } = default!;
+    [Inject] protected IUserDirectoryService _users { get; set; } = default!;
+    private SelectListReq selectListReq = new();
+    private List<UserDetails> filteredUsers = new();
+    private List<UserDetails> pagedUsers = new(); // Users to be shown on the current page
+    private MudTable<UserDetails> mudTable;
+    private string searchQuery = string.Empty;
+    private int pageSize => 50; // Items per page
+    private int[] pageSizeOptions => new[]
+    {
+        pageSize * 1,
+        pageSize * 2,
+        pageSize * 3,
+        pageSize * 4,
+        pageSize * 5
+    };
+    private int currentPage = 0; // Current page index
+
+    private Modules modules;
+    private List<BreadcrumbItem> _items = new List<BreadcrumbItem>
+    {
+        new BreadcrumbItem("Home", href: "#"),
+        new BreadcrumbItem("QA List", href: "#", disabled: true)
+    };
+
+    protected override async Task OnUserInitializedAsync()
+    {
+        await GetUsers();
+    }
+    private async Task GetUsers()
+    {
+        List<MasterData> regionList = new List<MasterData>();
+        var regionLst = await _fetchMasterList.FetchMasterList(CmdNames.Get_Region);
+        if (regionLst.masterDataList.Count > 0)
+        {
+            regionList = regionLst.masterDataList;
+        }
+        var users = await _users.GetAllUsersAsync();
+        if (users.Any())
+        {
+            pagedUsers = users.Where(a => a.Role_Id == 1006).ToList();
+        }
+        else
+        {
+            pagedUsers = new();
+        }
+        pagedUsers.ForEach(x => x.RegionList = regionList);
+        filteredUsers = pagedUsers;
+        
+    }
+    private void OnSearchChanged(string searchQuery)
+    {
+        this.searchQuery = searchQuery;
+        FilterRoles(); // Apply search filter
+    }
+    private void FilterRoles()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            filteredUsers = pagedUsers; // Show all Users if search is empty
+        }
+        else
+        {
+            filteredUsers = pagedUsers
+                .Where(role => role.Emp_Code!.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                       role.Emp_Name!.ToString().Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                       role.Emp_Contact_No!.ToString().Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            ApplyPaging(); // Re-apply pagination after search
+        }
+    }
+    private void ApplyPaging()
+    {
+        var startIndex = currentPage * pageSize;
+        filteredUsers = filteredUsers.Skip(startIndex).Take(pageSize).ToList(); // Paginate the filtered Users
+    }
+    private void OnPageChanged(int newPage)
+    {
+        currentPage = newPage;
+        ApplyPaging(); // Update paged users when the page is changed
+    }
+    private async Task OpenRoleDialog(UserDetails? user = null)
+    {
+        bool IsEdit = true;
+        if (user != null)
+        {
+            if (_CurrentUser.UserId == user.Id)
+            {
+                await ShowErrorDialog("You are not authorize to update yourself.");
+                return;
+            }
+        }
+        else
+        {
+            user = new UserDetails();
+            IsEdit = false;
+        }
+        selectListReq.Id = user == null ? 0 : user!.Id;
+        selectListReq.Cmd = CmdNames.Get_Role_Details_On_User_Id;
+        var res = await ApiMasterService.CallingAPI<RoleDetailsOnIdRes, SelectListReq>(AllApiNames.SELECT_ROLEDETAILS_ON_ID, selectListReq);
+        var roleDetails = new List<RoleDetails>();
+        if (res.responseCode == 0)
+        {
+            roleDetails = res.roleDetails;
+        }
+        else
+        {
+            Snackbar.Add(res.responseMessage!, Severity.Error);
+        }
+        if (roleDetails.Count > 0 && user != null)
+        {
+            user!.RoleDetailsList = roleDetails;
+        }
+
+        var regionList = await _fetchMasterList.FetchMasterList(CmdNames.Get_Region);
+        if (regionList.masterDataList.Count > 0)
+        {
+            user!.RegionList = regionList.masterDataList;
+        }
+
+        var parameters = new DialogParameters
+        {
+            { "User",  user!.Copy()},
+            { "IsEditMode", IsEdit }
+        };
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
+        var dialog = DialogService.Show<ChangeQALocation>("Add/Update QA Details", parameters, options);
+
+        var result = await dialog.Result;
+        if (!result!.Canceled)
+        {
+            var updatedUser = result.Data as UserDetails;
+            if (updatedUser != null)
+            {
+                updatedUser.Inserted_Updated_By = _CurrentUser.UserId;
+                updatedUser.RGN = updatedUser.REGION_IDS;
+                if (updatedUser.Role_Id == 0 || updatedUser.Role_Id == 1006)
+                {
+                    updatedUser.Role_Id = 1006;
+
+                    var res1 = await ApiMasterService.CallingAPI<GenRes, UserDetails>(AllApiNames.SET_USER!, updatedUser);
+                    if (res1.responseCode.Equals(0))
+                    {
+                        await GetUsers();
+                        mudTable?.NavigateTo(0);
+                    }
+                    else
+                    {
+                        await ShowErrorDialog(res.responseMessage!);
+                    }
+                }
+                else
+                {
+                    await ShowErrorDialog($"User already registerd with other role.");
+                }
+            }
+        }
+    }
+
+    private async Task ShowErrorDialog(string message)
+    {
+        await DialogService.ShowMessageBox(title: "Error", markupMessage: (MarkupString)message, yesText: "OK");
+    }
+}
+<style>
+    .mud-table-container {
+        max-height: 48vh;
+    }
+</style>
+

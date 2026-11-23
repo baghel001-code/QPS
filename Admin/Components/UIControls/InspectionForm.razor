@@ -1,0 +1,2634 @@
+﻿@using Admin.Components.Pages.UserMaster
+@using Admin.Components.Shared
+@using Application.Interfaces.V1.User
+@using Domain.Records
+@using EmailService.Models
+@using MudExtensions
+@using System.Text.RegularExpressions
+@using System.Security.Claims
+@using SixLabors.ImageSharp
+@using SixLabors.ImageSharp.Processing
+@using SixLabors.ImageSharp.Formats
+@using SixLabors.ImageSharp.Formats.Jpeg
+@using SixLabors.ImageSharp.Formats.Png
+@using System.IO;
+@inject IWebHostEnvironment Env
+@implements IAsyncDisposable
+@inject IPoSyncService _poSyncService
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="form" Model="_model">
+            <MudGrid>
+                <MudItem xs="12" md="12">
+                    <MudGrid>
+                        <MudItem xs="12" md="12">
+                            <MudChip T="string" Variant="Variant.Outlined" Color="MudBlazor.Color.Success"> Inspection Request :<b> @inspecitonType </b></MudChip>
+                            <MudChip T="string" OnClick="ViewPOIRDetails" Variant="Variant.Filled" Color="MudBlazor.Color.Secondary">View Details [ PO# - @PO.PONumberWithLinkPONumber ] [ IR# - @PO.InspId ] </MudChip>
+                            <MudChip T="string" OnClick="() => OpenPoPdf(PO.PONumberWithLinkPONumber)" Variant="Variant.Filled" Color="MudBlazor.Color.Success">DOWNLOAD PO</MudChip>
+
+                            <MudChip T="string" OnClick="ViewReport" Variant="Variant.Outlined" Color="MudBlazor.Color.Info">Report</MudChip>
+
+                            <MudChip T="string" OnClick="async () => await SyncPOdetails()" Variant="Variant.Filled" Icon="@Icons.Material.Filled.Sync" Color="MudBlazor.Color.Success">Sync PO Details</MudChip>
+
+                        </MudItem>
+
+
+                        @if (_model.InspectionResult == 4)
+                        {
+                            <!-- Row 1 -->
+                            <MudItem xs="12" md="2">
+                                <MudSelect T="int" Label="Inspection Result" @bind-Value="_model.InspectionResult" Required="true" Validation="@((int value) => value == 0 ? "Please select a value" : null)">
+                                    @foreach (var item in _model.PassFailInspectionResult)
+                                    {
+                                        <MudSelectItem Value="@item.Master_ID">
+                                            @( $"{item.Master_Name}")
+                                        </MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+
+                            <MudItem xs="12" md="6">
+                                <div style="position: relative;">
+                                    @if (RgnList.Count > 0)
+                                    {
+                                        <MudSelectExtended Required="true"
+                                                           T="ListItem"
+                                                           MultiSelection="true"
+                                                           ItemCollection="RgnList"
+                                                           SelectedValues="SelectedRgnList"
+                                                           SelectedValuesChanged="@(values => Rgn_OnSelectedValuesChanged(values.ToHashSet()))"
+                                                           Label="Select Abortive Reasons"
+                                                           SearchBox="true"
+                                                           SearchBoxAutoFocus="true"
+                                                           SelectAll="true"
+                                                           Variant="Variant.Outlined"
+                                                           Dense="true"
+                                                           Clearable="true"
+                                                           @ref="ddlRgn"
+                                                           OnOpen="Rgn_Open"
+                                                           OnClose="Rgn_Close"
+                                                           OnClearButtonClick="Rgn_Close"
+                                                           AnchorOrigin="Origin.BottomCenter"
+                                                           MultiSelectionTextFunc="@(item => SelectedRgnList.Count >1 ? $"{SelectedRgnList.First().LIST_TEXT} + {SelectedRgnList.Count - 1} more" : SelectedRgnList.Count == 1 ? SelectedRgnList.First().LIST_TEXT : string.Empty)"
+                                                           ToStringFunc="@(item => item?.LIST_TEXT ?? string.Empty)">
+                                        </MudSelectExtended>
+                                    }
+                                    @if (@SelectedRgnList.Count > 0)
+                                    {
+                                        if (RgnChipVisible)
+                                        {
+                                            <MudChip T="string" Style="z-index:9999999;  position: absolute; top: 15px; right: 15px; " Size="MudBlazor.Size.Small" @onclick="CloseRgnDropdown" Color="MudBlazor.Color.Secondary">Apply</MudChip>
+                                        }
+                                    }
+                                </div>
+                            </MudItem>
+
+                            <MudItem xs="12" md="2">
+                                @if (IsOtherAbortiveReasonVisible)
+                                {
+                                    <MudTextField T="string" Label="Other Abortive Reason" @bind-Value="_model.OtherAbortiveReason" Required="true" MaxLength="50" />
+                                }
+
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudTextField T="int" Label="Amount of travelling" @bind-Value="_model.AmtTravelling" Required="true" MaxLength="5" />
+                            </MudItem>
+
+                            <!-- Row 2 -->
+                            <MudItem xs="12" md="2">
+                                <MudSelect T="int" Label="Packing Status (100% Packed)" @bind-Value="_model.PackingStatus" Required="true" Validation="@((int value) => value == 0 ? "Please select a packing status" : null)">
+                                    @foreach (var item in _model.YesNoPackingStatus)
+                                    {
+                                        <MudSelectItem Value="@item.Master_ID">
+                                            @( $"{item.Master_Name}")
+                                        </MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudTextField Label="No of Bags/Cartons" @bind-Value="_model.NoOfBagsCartonsQty" Required="true" MaxLength="4" Validation="@((int? value) => value == null || value <= 0 ? "Value must be greater than 0" : null)" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudSelect T="int" Label="Unit" @bind-Value="_model.NoOfBagsCartonsUnit" Required="true" Validation="@((int value) => value == 0 ? "Please select a unit" : null)">
+                                    @foreach (var item in _model.UnitNoOfBagCarton)
+                                    {
+                                        <MudSelectItem Value="@item.Master_ID">
+                                            @( $"{item.Master_Name}")
+                                        </MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" md="6">
+                                <MudTextField T="string" Label="Factory Representative" @bind-Value="_model.NameOfFactoryRepresentative" Required="true" MaxLength="50" />
+                            </MudItem>
+
+                        }
+                        else
+                        {
+
+                            <!-- Row 1 -->
+                            <MudItem xs="12" md="2">
+                                <MudTextField T="string" Label="GPT NO." @bind-Value="_model.GptNo" Required="true" MaxLength="50" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudSelect T="int" Label="GPT Status" @bind-Value="_model.GptStatus" Required="true" Validation="@((int value) => value == 0 ? "Please select a status" : null)">
+                                    @foreach (var item in _model.PassFailGPTStatus)
+                                    {
+                                        <MudSelectItem Value="@item.Master_ID">
+                                            @( $"{item.Master_Name}")
+                                        </MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" md="4">
+                                <MudTextField T="string" Label="Area of fail GPTR" @bind-Value="_model.Area_Of_Fail_GPTR" Required="true" MaxLength="500" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudTextField T="string" Label="If fail(GPT) Approved By" @bind-Value="_model.GptApprovedBy" MaxLength="150" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudDatePicker @bind-Date="_model.GptApprovedDate" Label="Approval Date" Clearable="true" DateFormat="dd/MM/yyyy" />
+                            </MudItem>
+
+                            <!-- Row 2 -->
+                            <MudItem xs="12" md="2">
+                                <MudTextField T="string" Label="Elastic NO." @bind-Value="_model.gptElasticNo" Required="true" MaxLength="50" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudSelect T="int" Label="Elastic Status" @bind-Value="_model.gptElasticStatus" Required="true" Validation="@((int value) => value == 0 ? "Please select a status" : null)">
+                                    @foreach (var item in _model.ElasticStatusList)
+                                    {
+                                        <MudSelectItem Value="@item.Master_ID">
+                                            @( $"{item.Master_Name}")
+                                        </MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudTextField T="string" Label="If fail(Elastic) Approved By" @bind-Value="_model.gptElasticApprovedBy" MaxLength="150" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudDatePicker @bind-Date="_model.gptElasticApprovedDate" Label="Approval Date" Clearable="true" DateFormat="dd/MM/yyyy" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudTextField Label="No of Bags/Cartons" @bind-Value="_model.NoOfBagsCartonsQty" Required="true" MaxLength="4" Validation="@((int? value) => value == null || value <= 0 ? "Value must be greater than 0" : null)" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudSelect T="int" Label="Unit" @bind-Value="_model.NoOfBagsCartonsUnit" Required="true" Validation="@((int value) => value == 0 ? "Please select a unit" : null)">
+                                    @foreach (var item in _model.UnitNoOfBagCarton)
+                                    {
+                                        <MudSelectItem Value="@item.Master_ID">
+                                            @( $"{item.Master_Name}")
+                                        </MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+
+                            <!--Row 3 Zipper-->
+                            <MudItem xs="12" md="2">
+                                <MudTextField T="string" Label="Zipper Report NO." @bind-Value="_model.ZipperRptNo" Required="true" MaxLength="50" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudSelect T="int" Label="Zipper Status" @bind-Value="_model.ZipperStatus" Required="true" Validation="@((int value) => value == 0 ? "Please select a status" : null)">
+                                    @foreach (var item in _model.ZipperStatusList)
+                                    {
+                                        <MudSelectItem Value="@item.Master_ID">
+                                            @( $"{item.Master_Name}")
+                                        </MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudTextField T="string" Label="If fail(Zipper) Approved By" @bind-Value="_model.ZipperApprovedBy" MaxLength="150" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudDatePicker @bind-Date="_model.ZipperApprovedDate" Label="Approval Date" Clearable="true" DateFormat="dd/MM/yyyy" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudSelect T="int" Label="Packing Status(100% Packed)" @bind-Value="_model.PackingStatus" Required="true" Validation="@((int value) => value == 0 ? "Please select a packing status" : null)">
+                                    @foreach (var item in _model.YesNoPackingStatus)
+                                    {
+                                        <MudSelectItem Value="@item.Master_ID">
+                                            @( $"{item.Master_Name}")
+                                        </MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudSelect T="int" Label="Inline Done" @bind-Value="_model.InlineDone" Required="true" Validation="@((int value) => value == 0 ? "Please select a value" : null)">
+                                    @foreach (var item in _model.YesNoInlineDone)
+                                    {
+                                        <MudSelectItem Value="@item.Master_ID">
+                                            @( $"{item.Master_Name}")
+                                        </MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+
+                            <!--Row 4 -->
+                            <MudItem xs="12" md="2">
+                                <MudSelect T="int" Label="Packing List" @bind-Value="_model.PackingList" Required="true" Validation="@((int value) => value == 0 ? "Please select a yes/no." : null)">
+                                    @foreach (var item in _model.YesNoPackingList)
+                                    {
+                                        <MudSelectItem Value="@item.Master_ID">
+                                            @( $"{item.Master_Name}")
+                                        </MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudDatePicker @bind-Date="_model.PpsReleaseDate" DateFormat="dd/MM/yyyy" Label="PPS Release Date" Required="true" Validation="@((DateTime? d) => d == null ? "PPS Release Date is required" : null)" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudTextField Value="@(_model.PpsExpiryDate?.ToString("dd/MM/yyyy"))" Label="PPS Expiry Date" Required="true" ReadOnly="true" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudDatePicker @bind-Date="_model.MFG_Date" Label="MFG Date" Required="true" DateFormat="dd/MM/yyyy" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudTextField T="string" Label="Season" @bind-Value="_model.Season" Required="true" MaxLength="150" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudSelect T="int" Label="Color Code" @bind-Value="_model.ColorCode" Required="true" Validation="@((int value) => value == 0 ? "Please select a color code" : null)">
+                                    <MudSelectItem Value="0">
+                                        --Select--
+                                    </MudSelectItem>
+                                    @foreach (var item in _model.ColorList)
+                                    {
+                                        <MudSelectItem Value="@item.Master_ID">
+                                            @( $"{item.Master_Name}")
+                                        </MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+
+                            <!--Row 5 -->
+                            <MudItem xs="12" md="2">
+                                <MudTextField Label="Measurement Sample Size" @bind-Value="_model.measurementSampleQty" Required="true" MaxLength="4" Validation="@((int? value) => value == null || value <= 0 ? "Value must be greater than 0" : null)" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudSelect T="int" Label="Measurement" @bind-Value="_model.MeasurementSampleSize" Required="true" Validation="@((int value) => value == 0 ? "Please select a measurement status" : null)">
+                                    @foreach (var item in _model.PassFailMeasurementSampleSize)
+                                    {
+                                        <MudSelectItem Value="@item.Master_ID">
+                                            @( $"{item.Master_Name}")
+                                        </MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" md="8">
+                                <MudTextField T="string" Label="Fiber Content On PO" @bind-Value="_model.FiberContentOnPo" Required="true" MaxLength="250" />
+                            </MudItem>
+
+                            <!--Row 6 -->
+                            <MudItem xs="12" md="2">
+                                <MudTextField T="string" Label="Fiber Content On Test Report" @bind-Value="_model.FiberContentOnTestReport" Required="true" MaxLength="250" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudTextField T="string" Label="Fiber Content On W/C" @bind-Value="_model.FiberContentOnWc" Required="true" MaxLength="250" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudTextField T="string" Label="GSM On PO" @bind-Value="_model.GsmOnPo" Required="true" MaxLength="150" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudTextField T="string" Label="GSM On Test Report" @bind-Value="_model.GsmOnTestReport" Required="true" MaxLength="150" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudTextField Label="GSM On Bulk" @bind-Value="_model.GsmOnBulk" MaxLength="150" />
+                            </MudItem>
+                            @if (_CurrentUser.IsQAAdmin || _CurrentUser.IsQAM)
+                            {
+                                <MudItem xs="12" md="2">
+                                    <MudTextField T="string" Label="FIT" @bind-Value="_model.Fit" MaxLength="50" />
+                                </MudItem>
+                            }
+                            else
+                            {
+                                <MudItem xs="12" md="2">
+                                    <MudTextField T="string" Label="FIT" @bind-Value="_model.Fit" Required="true" MaxLength="50" />
+                                </MudItem>
+                            }
+
+
+                            <!--Row 7 -->
+                            <MudItem xs="12" md="2">
+                                <MudTextField Label="Bags/Cartons Check" @bind-Value="_model.NoOfCheck" Required="true" MaxLength="4" Validation="@((int? value) => value == null || value <= 0 ? "Value must be greater than 0" : null)" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudSelect T="int" Label="Unit" @bind-Value="_model.NoOfCheckUnit" Required="true" Validation="@((int value) => value == 0 ? "Please select a unit" : null)">
+
+                                    @foreach (var item in _model.UnitNoOfCheck)
+                                    {
+                                        <MudSelectItem Value="@item.Master_ID">
+                                            @( $"{item.Master_Name}")
+                                        </MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            @if (_CurrentUser.IsQAAdmin || _CurrentUser.IsQAM)
+                            {
+                                <MudItem xs="12" md="2">
+                                    <MudTextField Label="Selected Bags/Cartons No." @bind-Value="_model.SelectedBagCartonsNo" MaxLength="100" />
+                                </MudItem>
+                            }
+                            else
+                            {
+                                <MudItem xs="12" md="2">
+                                    <MudTextField Label="Selected Bags/Cartons No." @bind-Value="_model.SelectedBagCartonsNo" Required="true" MaxLength="100" />
+                                </MudItem>
+                            }
+
+                            <MudItem xs="12" md="2">
+                                <MudTextField Label="No of Prepack Check" @bind-Value="_model.NoOfPrepackCheck" Required="true" MaxLength="4" Validation="@((int? value) => value == null || value <= 0 ? "Value must be greater than 0" : null)" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudSelect T="int" Label="Inspection Result" @bind-Value="_model.InspectionResult" Required="true" Validation="@((int value) => value == 0 ? "Please select a value" : null)">
+                                    @foreach (var item in _model.PassFailInspectionResult)
+                                    {
+                                        <MudSelectItem Value="@item.Master_ID">
+                                            @( $"{item.Master_Name}")
+                                        </MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudSelect T="int" Label="Fail Reason" @bind-Value="_model.Reason_for_fail" Required="true">
+                                    <MudSelectItem Value="0">
+                                        --Select--
+                                    </MudSelectItem>
+                                    @foreach (var item in _model.FailReasonList)
+                                    {
+                                        <MudSelectItem Value="@item.Master_ID">
+                                            @( $"{item.Master_Name}")
+                                        </MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+
+                            <!-- Row 8 -->
+
+
+                            <MudItem xs="12" md="2">
+                                <MudTextField Label="Total Qty." @bind-Value="_model.POTotalQuantity" ReadOnly="true" MaxLength="50" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudTextField Label="Offered Qty." @bind-Value="_model.POOfferQuantity" Required="true" MaxLength="7" Validation="@((int? value) => value == null || value <= 0 ? "Value must be greater than 0" : null)" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudTextField Label="Ship Quantity" @bind-Value="_model.OfferedQuantity" Required="true" @onfocusout="DisplayAQL" MaxLength="7" Validation="@((int? value) => value == null || value <= 0 ? "Value must be greater than 0" : null)" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudChip T="string" OnClick="() => ViewAQL()" Variant="Variant.Text" Icon="@Icons.Material.Filled.Info" Color="MudBlazor.Color.Info">Sample Size: <b>@_model.AqlSampleSize</b>  PCS</MudChip>
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudChip T="string" Variant="Variant.Text" Color="MudBlazor.Color.Info">AQL: Major/Minor 2.5/2.5</MudChip>
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudTextField T="string" Label="Workmanship" @bind-Value="_model.Workmanship" Required="true" MaxLength="50" />
+                            </MudItem>
+
+                            <!-- Row 8 Conformity-->
+                            <MudItem xs="12" md="6">
+                                <MudSimpleTable Hover="true" Dense="true" Bordered="true" Striped="true">
+                                    <ColGroup>
+                                        <col style="width:auto" />
+                                        <col style="width:150px" />
+                                    </ColGroup>
+                                    <thead>
+                                        <tr>
+                                            <th>Conformity</th>
+                                            <th>PASS / FAIL</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>
+                                                <MudTextField Label="Size" @bind-Value="_model.conformitySize" Required="true" MaxLength="150" />
+                                            </td>
+                                            <td>
+                                                <MudSelect T="int" Label="" @bind-Value="_model.conformitySizeStatus" Required="true" Validation="@((int value) => value == 0 ? "Please select a value" : null)">
+                                                    @*   <MudSelectItem Value="0">
+                                                        --Select--
+                                                    </MudSelectItem> *@
+                                                    @foreach (var item in _model.ConformitySizeStatusList)
+                                                    {
+                                                        <MudSelectItem Value="@item.Master_ID">
+                                                            @( $"{item.Master_Name}")
+                                                        </MudSelectItem>
+                                                    }
+                                                </MudSelect>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>Embriodery/Print (Should be as per PPS)</td>
+                                            <td>
+                                                <MudSelect T="int" Label="" @bind-Value="_model.embroideryPf" Required="true" Validation="@((int value) => value == 0 ? "Please select a value" : null)">
+                                                    @*   <MudSelectItem Value="0">
+                                                        --Select--
+                                                    </MudSelectItem> *@
+                                                    @foreach (var item in _model.EmbroideryPFList)
+                                                    {
+                                                        <MudSelectItem Value="@item.Master_ID">
+                                                            @( $"{item.Master_Name}")
+                                                        </MudSelectItem>
+                                                    }
+                                                </MudSelect>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>Accessories (Should be as per PPS)</td>
+                                            <td>
+                                                <MudSelect T="int" Label="" @bind-Value="_model.accessoriesPf" Required="true" Validation="@((int value) => value == 0 ? "Please select a value" : null)">
+                                                    @*  <MudSelectItem Value="0">
+                                                        --Select--
+                                                    </MudSelectItem> *@
+                                                    @foreach (var item in _model.AccessoriesPFList)
+                                                    {
+                                                        <MudSelectItem Value="@item.Master_ID">
+                                                            @( $"{item.Master_Name}")
+                                                        </MudSelectItem>
+                                                    }
+                                                </MudSelect>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>Barcode Compliances </td>
+                                            <td>
+                                                <MudSelect T="int" Label="" @bind-Value="_model.barcodePf" Required="true" Validation="@((int value) => value == 0 ? "Please select a value" : null)">
+                                                    @*  <MudSelectItem Value="0">
+                                                        --Select--
+                                                    </MudSelectItem> *@
+                                                    @foreach (var item in _model.BarcodePFList)
+                                                    {
+                                                        <MudSelectItem Value="@item.Master_ID">
+                                                            @( $"{item.Master_Name}")
+                                                        </MudSelectItem>
+                                                    }
+                                                </MudSelect>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>No Plastic Tag/Kimble/Tag </td>
+                                            <td>
+                                                <MudSelect T="int" Label="" @bind-Value="_model.noPlasticPf" Required="true" Validation="@((int value) => value == 0 ? "Please select a value" : null)">
+                                                    @*  <MudSelectItem Value="0">
+                                                        --Select--
+                                                    </MudSelectItem> *@
+                                                    @foreach (var item in _model.NoPlasticPFList)
+                                                    {
+                                                        <MudSelectItem Value="@item.Master_ID">
+                                                            @( $"{item.Master_Name}")
+                                                        </MudSelectItem>
+                                                    }
+                                                </MudSelect>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>BOGO / Discount Tag </td>
+                                            <td>
+                                                <MudSelect T="int" Label="" @bind-Value="_model.bogoPf" Required="true" Validation="@((int value) => value == 0 ? "Please select a value" : null)">
+                                                    @*   <MudSelectItem Value="0">
+                                                        --Select--
+                                                    </MudSelectItem> *@
+                                                    @foreach (var item in _model.BogoPFList)
+                                                    {
+                                                        <MudSelectItem Value="@item.Master_ID">
+                                                            @( $"{item.Master_Name}")
+                                                        </MudSelectItem>
+                                                    }
+                                                </MudSelect>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </MudSimpleTable>
+                            </MudItem>
+                            <MudItem xs="12" md="6">
+                                <MudSimpleTable Hover="true" Dense="true" Bordered="true" Striped="true">
+                                    <ColGroup>
+                                        <col style="width:auto" />
+                                        <col style="width:150px" />
+                                    </ColGroup>
+                                    <thead>
+                                        <tr>
+                                            <th>Conformity</th>
+                                            <th>YES / NO</th>
+                                        </tr>
+                                    </thead>
+
+                                    <tbody>
+                                        <tr>
+                                            <td>
+                                                <MudTextField Label="Pre-Pack Ratio" @bind-Value="_model.conformityPrepack" Required="true" MaxLength="150" />
+                                            </td>
+                                            <td>
+                                                <MudSelect T="int" Label="" @bind-Value="_model.conformityPrepackStatus" Required="true" Validation="@((int value) => value == 0 ? "Please select a value" : null)">
+                                                    @foreach (var item in _model.ConformityPrepackStatusList)
+                                                    {
+                                                        <MudSelectItem Value="@item.Master_ID">
+                                                            @( $"{item.Master_Name}")
+                                                        </MudSelectItem>
+                                                    }
+                                                </MudSelect>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>Thread From Nominated Vendor</td>
+                                            <td>
+                                                <MudSelect T="int" Label="" @bind-Value="_model.threadYn" Required="true" Validation="@((int value) => value == 0 ? "Please select a value" : null)">
+                                                    @foreach (var item in _model.ThreadYNList)
+                                                    {
+                                                        <MudSelectItem Value="@item.Master_ID">
+                                                            @( $"{item.Master_Name}")
+                                                        </MudSelectItem>
+                                                    }
+                                                </MudSelect>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>Button From Nominated Vendor</td>
+                                            <td>
+                                                <MudSelect T="int" Label="" @bind-Value="_model.buttonYn" Required="true" Validation="@((int value) => value == 0 ? "Please select a value" : null)">
+
+                                                    @foreach (var item in _model.ButtonYNList)
+                                                    {
+                                                        <MudSelectItem Value="@item.Master_ID">
+                                                            @( $"{item.Master_Name}")
+                                                        </MudSelectItem>
+                                                    }
+                                                </MudSelect>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>Zipper From Nominated Vendor </td>
+                                            <td>
+                                                <MudSelect T="int" Label="" @bind-Value="_model.zipperYn" Required="true" Validation="@((int value) => value == 0 ? "Please select a value" : null)">
+
+                                                    @foreach (var item in _model.ZipperYNList)
+                                                    {
+                                                        <MudSelectItem Value="@item.Master_ID">
+                                                            @( $"{item.Master_Name}")
+                                                        </MudSelectItem>
+                                                    }
+                                                </MudSelect>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>Interlining From Nominated Vendor </td>
+                                            <td>
+                                                <MudSelect T="int" Label="" @bind-Value="_model.interliningYn" Required="true" Validation="@((int value) => value == 0 ? "Please select a value" : null)">
+
+                                                    @foreach (var item in _model.InterliningYNList)
+                                                    {
+                                                        <MudSelectItem Value="@item.Master_ID">
+                                                            @( $"{item.Master_Name}")
+                                                        </MudSelectItem>
+                                                    }
+                                                </MudSelect>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>Elastic From Nominated Vendor </td>
+                                            <td>
+                                                <MudSelect T="int" Label="" @bind-Value="_model.elasticYn" Required="true" Validation="@((int value) => value == 0 ? "Please select a value" : null)">
+
+                                                    @foreach (var item in _model.ElasticYNList)
+                                                    {
+                                                        <MudSelectItem Value="@item.Master_ID">
+                                                            @( $"{item.Master_Name}")
+                                                        </MudSelectItem>
+                                                    }
+                                                </MudSelect>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </MudSimpleTable>
+                            </MudItem>
+
+                            <!-- Row 9 -->
+                            <MudItem xs="12" md="8">
+                                <MudTextField T="string" Label="Remark Comment" @bind-Value="_model.RemarkComment" MaxLength="500" />
+                            </MudItem>
+                            <MudItem xs="12" md="4">
+                                <MudTextField T="string" Label="Factory Representative" @bind-Value="_model.NameOfFactoryRepresentative" Required="true" MaxLength="50" />
+                            </MudItem>
+
+                            <!-- Row 10 -->
+                            <MudItem xs="12" md="12">
+                                <MudTextField T="string" Label="Note" @bind-Value="_model.Note" MaxLength="500" />
+                            </MudItem>
+                        }
+
+                        @if (_model.InspectionResult == 4)
+                        {
+                            <MudItem xs="12" md="2">
+                                <MudTextField Label="Total Qty." @bind-Value="_model.POTotalQuantity" ReadOnly="true" MaxLength="50" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudTextField Label="Offered Qty." @bind-Value="_model.POOfferQuantity" ReadOnly="true" MaxLength="50" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudTextField Label="Ship Quantity" @bind-Value="_model.OfferedQuantity" Required="true" @onfocusout="DisplayAQL" MaxLength="7" Validation="@((int? value) => value == null || value <= 0 ? "Value must be greater than 0" : null)" />
+                            </MudItem>
+
+                            <MudItem xs="12" md="2">
+                                <MudChip T="string" OnClick="() => ViewAQL()" Variant="Variant.Text" Icon="@Icons.Material.Filled.Info" Color="MudBlazor.Color.Info">Sample Size: <b>@_model.AqlSampleSize</b>  PCS</MudChip>
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudChip T="string" Variant="Variant.Text" Color="MudBlazor.Color.Info">AQL: Major/Minor 2.5/2.5</MudChip>
+                            </MudItem>
+
+                            @*  <MudItem xs="12" md="2">
+                                <MudChip T="string" OnClick="ViewReport" Variant="Variant.Outlined"> Preview  </MudChip>
+                            </MudItem> *@
+
+                        }
+                        <!-- Row 11 Attechment -->
+                        <MudItem xs="12" md="8">
+                            <MudStack Row="true">
+                                <MudFileUpload T="IReadOnlyList<IBrowserFile>" Accept=".png, .jpg, .pdf, .word" FilesChanged="UploadFiles" MaximumFileCount="10" MaxFileSize="@(10 * 1024 * 1024)">
+                                    <ActivatorContent>
+                                        <MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload">Upload only image or pdf files upto 10MB size</MudButton>
+                                    </ActivatorContent>
+                                    <SelectedTemplate>
+                                        @if (files != null)
+                                        {
+                                            <MudList T="string">
+                                                @foreach (var file in files)
+                                                {
+                                                    <MudListItem Icon="@Icons.Material.Filled.AttachFile">
+                                                        @file.Name <code>@(file.Size / 1024) KB</code>
+                                                        <MudButton Variant="Variant.Outlined" OnClick="@(() => Remove(file))">remove</MudButton>
+                                                        <MudButton Variant="Variant.Outlined" Color="MudBlazor.Color.Secondary" OnClick="@(() => OpenFile(file))">Preview</MudButton>
+
+                                                    </MudListItem>
+                                                }
+
+                                            </MudList>
+                                        }
+
+                                    </SelectedTemplate>
+                                </MudFileUpload>
+                            </MudStack>
+                            <MudStack Row="true">
+                                @if (largSizeFiles.Count > 0)
+                                {
+                                    <div style="display:flex;flex-wrap:wrap;gap:10px;">
+                                        <MudText>Sorry, the following file(s) are too large to upload. Please choose a file smaller than 10 MB.</MudText>
+                                        @foreach (var path in largSizeFiles)
+                                        {
+                                            <code>@path <br /></code>
+                                        }
+                                    </div>
+                                }
+                            </MudStack>
+                        </MudItem>
+                        <MudItem xs="12" md="2">
+                            <MudChip T="string" Variant="Variant.Text" Color="MudBlazor.Color.Success">QA Documents</MudChip>
+                            @if (!string.IsNullOrEmpty(_model.TestReportAttachment))
+                            {
+                                @foreach (var thumb in _model.TestReportAttachment.Split(",").Select((value, index) => new { value, index }))
+                                {
+                                    if (thumb.value.Contains("."))
+                                    {
+                                        <MudButton @onclick="@(() => OpenInNewTab(thumb.value))">Attachment  - @(thumb.index + 1)</MudButton>
+                                    }
+
+                                }
+                            }
+                        </MudItem>
+                        <MudItem xs="12" md="2">
+                            <MudChip T="string" Variant="Variant.Text" Color="MudBlazor.Color.Secondary">Admin Documents</MudChip>
+                            @if (!string.IsNullOrEmpty(_model.GenAttachmentFirst))
+                            {
+
+                                @foreach (var item in _model.GenAttachmentFirst.Split(",").Select((value, index) => new { value, index }))
+                                {
+                                    if (item.value.Contains("."))
+                                    {
+                                        <MudButton @onclick="@(() => OpenInNewTab(item.value))">
+                                            Attachment - @(item.index + 1)
+                                        </MudButton>
+                                    }
+                                }
+                            }
+                        </MudItem>
+
+
+                    </MudGrid>
+
+                </MudItem>
+                @if (_model.InspectionResult != 4)
+                {
+                    <!-- Row 12 -->
+                    <MudItem xs="12" md="12">
+                        <MudGrid>
+                            <MudItem xs="12" md="12">
+                                <MudChip T="string" Variant="Variant.Outlined" Color="MudBlazor.Color.Secondary">Defect(s) Observed</MudChip>
+                            </MudItem>
+                            <MudItem xs="12" md="8">
+                                <MudTextField T="string" @bind-Value="defectDto.Defects" Label="Defect" FullWidth="true" MaxLength="200" />
+                            </MudItem>
+                            <MudItem xs="12" md="1">
+                                <MudTextField Label="Major" @bind-Value="defectDto.Major" MaxLength="2" />
+                            </MudItem>
+                            <MudItem xs="12" md="1">
+                                <MudTextField Label="Minor" @bind-Value="defectDto.Minor" MaxLength="2" />
+                            </MudItem>
+                            <MudItem xs="12" md="2">
+                                <MudButton Variant="Variant.Outlined" EndIcon="@Icons.Material.Filled.PostAdd" Color="MudBlazor.Color.Secondary" OnClick="async () => await AddToDefectList()">Add Defect</MudButton>
+                            </MudItem>
+                        </MudGrid>
+                    </MudItem>
+                    <!-- Row 13 -->
+                    <MudItem xs="12" md="12">
+                        <MudGrid>
+                            <!-- Role Selection -->
+                            <MudItem xs="12" md="12">
+                                <MudTable T="InspectionDefectDto" Items="_model.Defects.OrderBy(d => d.SNo)" Hover="true" Dense="true" Bordered="true" Striped="true" SortLabel="Sort By">
+                                    <ColGroup>
+                                        <col style="width:100px" />     <!-- SR No -->
+                                        <col style="width:auto" />     <!-- Defects -->
+                                        <col style="width:120px" />    <!-- Major -->
+                                        <col style="width:120px" />    <!-- Minor -->
+                                        <col style="width:50px" />    <!-- Minor -->
+                                    </ColGroup>
+
+                                    <HeaderContent>
+                                        <MudTh>SR.No.</MudTh>
+                                        <MudTh><MudTableSortLabel SortBy="new Func<InspectionDefectDto, object>(x => x.Defects)">DEFECT</MudTableSortLabel></MudTh>
+                                        <MudTh><MudTableSortLabel SortBy="new Func<InspectionDefectDto, object>(x => x.Major)">MAJOR</MudTableSortLabel></MudTh>
+                                        <MudTh><MudTableSortLabel SortBy="new Func<InspectionDefectDto, object>(x => x.Minor)">MINOR</MudTableSortLabel></MudTh>
+                                        <MudTh></MudTh>
+                                    </HeaderContent>
+
+                                    <RowTemplate>
+                                        @if (context.Defects_Id == 1001 || context.Defects_Id == 1002)
+                                        {
+                                            <MudTd ColSpan="2"><b>@context.Defects</b></MudTd>
+                                            <MudTd DataLabel="MAZOR"><b> @context.Major</b></MudTd>
+                                            <MudTd DataLabel="MINOR"><b> @context.Minor</b></MudTd>
+                                            <MudTd>
+                                                @if (context.Defects_Id == 1002)
+                                                {
+                                                    <MudChip T="string" Icon="@(_model._defectSttsId == 1 ? Icons.Material.Filled.VerifiedUser : Icons.Material.Filled.Error)" Color="_model._defectSttsId == 1 ? MudBlazor.Color.Success : MudBlazor.Color.Error"> @_model._defectStts</MudChip>
+                                                }
+                                            </MudTd>
+                                        }
+                                        else
+                                        {
+                                            <MudTd>
+                                                @context.SNo
+                                            </MudTd>
+                                            <MudTd DataLabel="DEFECTS">
+                                                @context.Defects
+                                            </MudTd>
+                                            <MudTd DataLabel="MAZOR">@context.Major</MudTd>
+                                            <MudTd DataLabel="MINOR">@context.Minor</MudTd>
+                                            <MudTd>
+                                                <MudTooltip Text="Remove" ShowOnFocus="false">
+                                                    <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Color="MudBlazor.Color.Info" Size="MudBlazor.Size.Small" OnClick="@(async () => await RemoveItem(context))" />
+                                                </MudTooltip>
+                                            </MudTd>
+
+                                        }
+                                    </RowTemplate>
+                                    <PagerContent>
+                                        <MudTablePager PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
+                                    </PagerContent>
+                                </MudTable>
+                            </MudItem>
+                        </MudGrid>
+                    </MudItem>
+                }
+
+                @if (_CurrentUser.IsQAAdmin || _CurrentUser.IsQAM)
+                {
+                    <!-- Row 14 -->
+                    <MudItem xs="12" md="3">
+                        <MudDatePicker @bind-Date="_model.GPT_Comm_Approval_Date" Label="FI Comm. Appr. Date" DateFormat="dd/MM/yyyy" /> @* only admin will input *@
+                    </MudItem>
+                    <MudItem xs="12" md="3">
+                        <MudTextField T="string" Label="FI Comm. Approved By" @bind-Value="_model.GTP_Comm_Approved_By" MaxLength="150" />@* only admin will input *@
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudTextField T="string" Label="Comm. Approval Document(mail dated,debit etc.)" @bind-Value="_model.CommApprovalDoc" MaxLength="250" />@* only admin will input *@
+                    </MudItem>
+                    <MudItem xs="12" md="2">
+                        <MudTextField T="int" Label="Debit Amount" @bind-Value="_model.DebitAmount" MaxLength="12" />@* only admin will input *@
+                    </MudItem>
+
+                    <!-- Row 15 -->
+                    <MudItem xs="12" md="12">
+                        <MudTextField T="string" Label="Admin Remark" @bind-Value="_model.AdminRemark" MaxLength="250" />@* only admin will input *@
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+
+    <DialogActions>
+
+        <MudButton OnClick="ViewReport" Color="MudBlazor.Color.Transparent" Variant="Variant.Outlined">Preview</MudButton>
+        @if (!isShow || _CurrentUser.IsQAAdmin || _CurrentUser.IsQAM)
+        {
+            <MudButton OnClick="Save" Color="MudBlazor.Color.Secondary" Variant="Variant.Filled" Disabled="@isSubmitting">Save</MudButton>
+            <MudButton OnClick="Submit" Color="MudBlazor.Color.Success" Variant="Variant.Filled" Disabled="@isSubmitting">Submit</MudButton>
+        }
+        @if (_CurrentUser.IsQAAdmin || _CurrentUser.IsQAM)
+        {
+            <MudButton OnClick="Reset" Color="MudBlazor.Color.Secondary" Variant="Variant.Filled" Disabled="@isSubmitting">Reset</MudButton>
+        }
+        <MudButton OnClick="CloseDialog" Color="MudBlazor.Color.Error" Variant="Variant.Filled">Cancel</MudButton>
+    </DialogActions>
+</MudDialog>
+<Loader IsVisible="@IsLoading" />
+@if (isRunning)
+{
+    <div class="overlay">
+        <div class="progress-container">
+            <div class="progress-bar" style="width:@progress%"></div>
+            <span class="progress-text">@progress %</span>
+        </div>
+    </div>
+
+
+}
+
+@code {
+    [Inject] protected IFetchMasterList _fetchMasterList { get; set; } = default!;
+    [Inject] protected PODownloadService _PODownloadService { get; set; } = default!;
+    [Inject] protected ICurrentUserService _CurrentUser { get; set; } = default!;
+    #region Abortive Logic
+    //---------Abortive Print
+    private async Task ViewReport()
+    {
+        if (PO != null)
+        {
+            var parameters = new DialogParameters
+            {
+                ["InspectId"] = (int)_model.InspectId,
+                ["IsPreview"] = true
+            };
+
+            if (_model.InspectionResult == 4)
+            {
+                await DialogService.ShowAsync<InspectionReportAbortiveView>("Abortive Report Preview", parameters, new DialogOptions { MaxWidth = MaxWidth.ExtraLarge, FullWidth = true });
+            }
+            else
+            {
+                await DialogService.ShowAsync<InspectionReportView>("Final Inspection Report", parameters, new DialogOptions { MaxWidth = MaxWidth.ExtraLarge, FullWidth = true });
+            }
+
+        }
+        else
+            Snackbar.Add("PO data not available.", Severity.Error);
+
+
+    }
+
+
+    //----------------------
+
+    private bool IsOtherAbortiveReasonVisible = false;
+    private List<ListItem> RgnList = new();
+    private HashSet<ListItem> SelectedRgnList = new();
+    private MudSelectExtended<ListItem> ddlRgn = new();
+    private bool RgnChipVisible = false;
+    private int RegionCount = 0;
+    private string SelectedRgn => string.Join(",", SelectedRgnList.Where(item => item.IS_SELECTED).Select(item => item.LIST_VALUE));
+
+    private void SetAll()
+    {
+        try
+        {
+            GetRgn();
+
+            // ✅ Guard: AbortiveReasonIds null check
+            if (string.IsNullOrEmpty(_model.AbortiveReasonIds))
+            {
+                StateHasChanged();
+                return;
+            }
+
+            if (_model.AbortiveReasonIds.ToUpper() == "ALL")
+            {
+                RgnList.ForEach(item => item.IS_SELECTED = true);
+            }
+            else
+            {
+                var selectedRgnIds = new HashSet<string>(_model.AbortiveReasonIds.Split(','));
+                RgnList.ForEach(item => item.IS_SELECTED = selectedRgnIds.Contains(item.LIST_VALUE!));
+            }
+
+            SelectedRgnList = RgnList.Where(d => d.IS_SELECTED).ToHashSet();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error setting abortive reasons: {ex.Message}", Severity.Error);
+        }
+    }
+    //---------------------------AbortiveRgnDDL-----
+
+    private void GetRgn()
+    {
+        var rgnsltdlist = string.IsNullOrEmpty(_model.AbortiveReasonIds) ? new List<string>() : _model.AbortiveReasonIds.Split(',').ToList();
+
+        var rgnlist = _model.AbortiveReasonList;
+        if (rgnlist != null && rgnlist.Count > 0)
+        {
+            foreach (var item in rgnlist)
+            {
+                RgnList.Add(new ListItem
+                {
+                    LIST_TEXT = item.Master_Name,
+                    LIST_VALUE = item.Master_ID.ToString(),
+                    IS_SELECTED = rgnsltdlist.Contains(item.Master_ID.ToString())
+                });
+            }
+        }
+        else
+        {
+            Snackbar.Add("Abortive Reason List is empty.", Severity.Error);
+            RgnList = new();
+        }
+        StateHasChanged();
+    }
+    private void Rgn_OnSelectedValuesChanged(HashSet<ListItem> values)
+    {
+        SelectedRgnList = values;
+        if (SelectedRgnList.Any(a => a.LIST_VALUE == "8"))
+        {
+            IsOtherAbortiveReasonVisible = true;
+
+        }
+        else
+        {
+            IsOtherAbortiveReasonVisible = false;
+        }
+        StateHasChanged();
+    }
+    private void Rgn_Open()
+    {
+        RgnChipVisible = true;
+    }
+    private async Task Rgn_Close()
+    {
+        RgnChipVisible = false;
+        if (SelectedRgnList.Count > 0)
+        {
+            // Set IS_SELECTED = true for all selected items
+            foreach (var item in SelectedRgnList)
+            {
+                item.IS_SELECTED = true;
+            }
+        }
+    }
+    void CloseRgnDropdown()
+    {
+        ddlRgn?.CloseMenu();
+        RgnChipVisible = false;
+    }
+
+    #endregion
+    //-----------------------------------------
+    #region Autosave logic
+
+    private PeriodicTimer _timer;
+    private CancellationTokenSource _cts;
+    private Task _backgroundTask;
+    private async Task RunAutoSaveAsync(CancellationToken token)
+    {
+        try
+        {
+            while (await _timer.WaitForNextTickAsync(token))
+            {
+                if (!_model.IsComplete)
+                {
+                    await AutoSaveSafe(token);
+                }
+
+            }
+        }
+        catch (OperationCanceledException ex)
+        {
+            // ✅ Expected when dialog closes — silently ignore
+        }
+        catch (ObjectDisposedException ex)
+        {
+            // ✅ Expected during shutdown — silently ignore
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"AutoSave error: {ex.Message}", Severity.Success, config =>
+                   {
+                       config.VisibleStateDuration = 1000;
+                   });
+        }
+    }
+    private async Task AutoSaveSafe(CancellationToken token)
+    {
+        if (isSubmitting || _model.IsComplete)
+        {
+            string completedOn = _model.Date_of_Completion?.ToString("dd-MMM-yyyy hh:mm tt") ?? "N/A";
+
+            Snackbar.Add(
+                $"Inspection data was already completed and submitted on {completedOn}.",
+                Severity.Info,
+                config =>
+                {
+                    config.VisibleStateDuration = 3000;
+                });
+
+            return;
+
+        }
+
+        try
+        {
+            isSubmitting = true;
+
+            if (!_model.IsComplete && isSelfInspector)
+            {
+                // Don't autosave if form is essentially empty
+                // Check at least one meaningful field is filled
+                bool hasMinimumData =
+                    _model.InspectionResult > 0 || !string.IsNullOrEmpty(_model.GptNo) || !string.IsNullOrEmpty(_model.Season) || _model.OfferedQuantity > 0;
+
+                if (!hasMinimumData)
+                {
+                    // Form hasn't been touched yet — skip autosave
+                    Snackbar.Add("Waiting for input before autosave...",
+                        Severity.Info, config =>
+                        {
+                            config.VisibleStateDuration = 1000;
+                        });
+                    return;
+                }
+                _model.UserId = _CurrentUser.UserId;// Set the CREATED BY
+                _model.InspectionId = PO.InspId;
+                _model.InspectorCode = _CurrentUser.UserCode;
+                _model.AbortiveReasonIds = SelectedRgn;
+
+                // ✅ Safe clone — _model.Defects is never touched
+                var modelToSave = _model.CloneForAutoSave(protectedIds: protectedIds);
+
+                var res1 = await ApiMasterService.CallingAPI<GenRes, InspectionModel>(AllApiNames.SAVE_INSPECT_DATA!, modelToSave);
+                if (res1.responseCode.Equals(0))
+                {
+                    _model.InspectId = res1.recordId;
+                    Snackbar.Add("Changes saved.", Severity.Success, config =>
+                    {
+                        config.VisibleStateDuration = 500;
+                    });
+                }
+                else
+                {
+                    Snackbar.Add($"Changes not saved. {res1.responseMessage!}", Severity.Error, config =>
+                    {
+                        config.VisibleStateDuration = 5000;
+                    });
+                }
+            }
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_cts != null && !_cts.IsCancellationRequested) // ← add this check
+        {
+            try
+            {
+                _cts.Cancel();
+                if (_backgroundTask != null)
+                    await _backgroundTask;
+            }
+            catch (OperationCanceledException) { }
+            finally  // ← move cleanup to finally so it always runs
+            {
+                _timer?.Dispose();
+                _cts?.Dispose();
+                _timer = null;
+                _cts = null;
+                _backgroundTask = null; // ← null it out for GC, no Dispose() needed
+
+            }
+        }
+    }
+
+    #endregion
+    //------------------------------------------
+    #region Reset logic
+    private async Task Reset()
+    {
+        try
+        {
+            bool? dres = await DialogService.ShowMessageBox(
+                "Confirmation",
+                "Do you want to reset Inspection details?",
+                yesText: "Yes",
+                cancelText: "No");
+
+            // User clicked No or closed dialog
+            if (dres != true)
+                return;
+
+            if (_model == null)
+            {
+                Snackbar.Add("Inspection data not found.", Severity.Error);
+                return;
+            }
+
+            // Reset values
+            _model.IsComplete = false;
+            _model.Date_of_Completion = null;
+            _model.IsResetByAdmin = true;
+            _model.UserId = _CurrentUser.UserId;
+            _model.InspectionId = PO?.InspId ?? 0;
+
+
+            var res1 = await ApiMasterService.CallingAPI<GenRes, InspectionModel>(
+                AllApiNames.SAVE_INSPECT_DATA!,
+                _model);
+
+            if (res1 != null && res1.responseCode == 0)
+            {
+                var _attFiles = _model.TestReportAttachment?.Split(',').ToList();
+
+                if (_attFiles != null)
+                {
+                    foreach (var item in _attFiles)
+                    {
+                        try
+                        {
+                            var physicalPath = Path.Combine(Env.WebRootPath, item.TrimStart('/', '\\').Replace('/', '\\'));
+
+                            if (File.Exists(physicalPath))
+                                File.Delete(physicalPath);
+                        }
+                        catch { /* ignore file delete errors */ }
+                    }
+                }
+
+                var _attFFiles = _model.GenAttachmentFirst?.Split(',').ToList();
+
+                if (_attFFiles != null)
+                {
+                    foreach (var item in _attFFiles)
+                    {
+                        try
+                        {
+                            var physicalPath = Path.Combine(Env.WebRootPath, item.TrimStart('/', '\\').Replace('/', '\\'));
+
+                            if (File.Exists(physicalPath))
+                                File.Delete(physicalPath);
+                        }
+                        catch { /* ignore file delete errors */ }
+                    }
+                }
+
+                Snackbar.Add("Inspection reset successfully.", Severity.Success);
+                MudDialog?.Close();
+            }
+            else
+            {
+                Snackbar.Add(
+                    res1?.responseMessage ?? "Failed to reset inspection.",
+                    Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error while resetting inspection: {ex.Message}", Severity.Error);
+        }
+    }
+    //--------------------
+    #endregion
+
+    #region Variables
+    private int progress = 0;
+    bool isRunning = false;
+    bool isShow;
+    private List<int> protectedIds = new() { 1001, 1002 };
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+    [Parameter]
+    public POHeader PO { get; set; } = new();
+    [Parameter] public bool IsEditMode { get; set; }
+    public bool IsMaked { get; set; } = false;
+    private string inspecitonType = string.Empty;
+
+    private InspectionDefectDto defectDto = new();
+
+    public InspectionModel _model { get; set; } = new();
+
+    private bool isFatched { get; set; }
+
+    private MudForm form;
+    private bool isSubmitting = false;
+    bool IsLoading = false;
+
+    private List<MasterData> masterDataList = new();
+    bool isSelfInspector;
+    bool isAdminOrSubEdit;
+    bool IsCompleteInSubmit = false;
+    #endregion
+
+    #region Get Masters and Browsefiles
+
+    private async Task<List<MasterData>> GetMasterData(string cmd)
+    {
+        try
+        {
+            IsLoading = true;
+            var result = await _fetchMasterList.FetchMasterList(cmd);
+            IsLoading = false;
+
+            // ✅ Guard: null response
+            return result?.masterDataList ?? new List<MasterData>();
+        }
+        catch (Exception ex)
+        {
+            IsLoading = false;
+            Snackbar.Add($"Error loading {cmd} data: {ex.Message}", Severity.Error);
+            return new List<MasterData>(); // ✅ Never return null
+        }
+    }
+
+
+    //--File upload section----------------------
+    private const string UploadFolder = "wwwroot/Images/INSPECTIONS";
+    private const string relPath = "/Images/INSPECTIONS";
+    private const long MaxFileSize = 10 * 1024 * 1024; // 10MB
+    private List<string> largSizeFiles = new();
+    IList<IBrowserFile> files = new List<IBrowserFile>();
+    private List<string> fileNames = new();
+
+    public class InMemoryBrowserFile : IBrowserFile
+    {
+        private readonly byte[] _fileBytes;
+
+        public InMemoryBrowserFile(byte[] fileBytes, string name, string contentType)
+        {
+            try
+            {
+                if (fileBytes == null || fileBytes.Length == 0)
+                    throw new ArgumentException("File content cannot be null or empty.", nameof(fileBytes));
+
+                if (string.IsNullOrWhiteSpace(name))
+                    throw new ArgumentException("File name cannot be null or empty.", nameof(name));
+
+                if (string.IsNullOrWhiteSpace(contentType))
+                    throw new ArgumentException("Content type cannot be null or empty.", nameof(contentType));
+
+                _fileBytes = fileBytes;
+                Name = name;
+                Size = fileBytes.LongLength;
+                LastModified = DateTimeOffset.Now;
+                ContentType = contentType;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    $"Failed to initialize InMemoryBrowserFile. Error: {ex.Message}", ex);
+            }
+        }
+
+        public DateTimeOffset LastModified { get; }
+
+        public string Name { get; }
+
+        public long Size { get; }
+
+        public string ContentType { get; }
+
+        public Stream OpenReadStream(long maxAllowedSize = 512000, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (_fileBytes == null || _fileBytes.Length == 0)
+                    throw new InvalidOperationException("File data is unavailable.");
+
+                if (_fileBytes.LongLength > maxAllowedSize)
+                {
+                    throw new IOException(
+                        $"File size exceeds the allowed limit of {maxAllowedSize} bytes.");
+                }
+
+                return new MemoryStream(_fileBytes, writable: false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw new IOException(
+                    $"Error while opening file stream for '{Name}'. Error: {ex.Message}", ex);
+            }
+        }
+    }
+    private async Task UploadFiles(IReadOnlyList<IBrowserFile> selectedFiles)
+    {
+        try
+        {
+            const int maxFileCount = 20;
+            const long maxFileSize = 10 * 1024 * 1024; // 10 MB
+
+            if (selectedFiles == null || !selectedFiles.Any())
+            {
+                Snackbar.Add("No files selected.", Severity.Warning);
+                return;
+            }
+
+            if (selectedFiles.Count > maxFileCount)
+            {
+                Snackbar.Add($"You can upload a maximum of {maxFileCount} files at a time.", Severity.Warning);
+                return;
+            }
+
+            // Ensure collections are initialized
+            files ??= new List<IBrowserFile>();
+            largSizeFiles ??= new List<string>();
+
+            // Ensure upload directory exists
+            var uploadsFolder = Path.Combine(Env.WebRootPath, "uploads");
+
+            if (!Directory.Exists(uploadsFolder))
+            {
+                Directory.CreateDirectory(uploadsFolder);
+            }
+
+
+
+            foreach (var file in selectedFiles)
+            {
+                try
+                {
+                    if (file == null)
+                        continue;
+
+                    var ext = Path.GetExtension(file.Name)?.ToLowerInvariant();
+
+                    if (string.IsNullOrWhiteSpace(ext))
+                    {
+                        largSizeFiles.Add(file.Name);
+                        continue;
+                    }
+
+                    var uniqueFileName = $"{Guid.NewGuid()}{ext}";
+                    var filePath = Path.Combine(uploadsFolder, uniqueFileName);
+
+                    // Image Files
+                    if (ext == ".jpg" || ext == ".jpeg" || ext == ".png")
+                    {
+
+                        await using var stream = file.OpenReadStream(maxFileSize);
+
+                        using var image = await Image.LoadAsync(stream);
+
+                        // Resize image if width exceeds 1024px
+                        if (image.Width > 1024)
+                        {
+                            double scale = 1024.0 / image.Width;
+                            int newHeight = (int)(image.Height * scale);
+
+                            image.Mutate(x => x.Resize(1024, newHeight));
+                        }
+
+                        await using var outputStream = new MemoryStream();
+
+                        IImageEncoder encoder = ext switch
+                        {
+                            ".jpg" or ".jpeg" => new JpegEncoder
+                            {
+                                Quality = 80
+                            },
+
+                            ".png" => new PngEncoder
+                            {
+                                CompressionLevel = PngCompressionLevel.Level6
+                            },
+
+                            _ => new JpegEncoder
+                            {
+                                Quality = 80
+                            }
+                        };
+
+                        await image.SaveAsync(outputStream, encoder);
+
+                        long compressedSize = outputStream.Length;
+
+                        if (compressedSize > maxFileSize)
+                        {
+                            largSizeFiles.Add(file.Name);
+                            continue;
+                        }
+
+                        // Reset stream position
+                        outputStream.Position = 0;
+
+                        IBrowserFile compressedFile = new InMemoryBrowserFile(outputStream.ToArray(), file.Name, file.ContentType);
+
+                        files.Add(compressedFile);
+
+                    }
+                    else
+                    {
+
+                        // Non-image files
+                        if (file.Size > maxFileSize)
+                        {
+                            largSizeFiles.Add(file.Name);
+                            continue;
+                        }
+
+                        files.Add(file);
+                    }
+                }
+                catch (IOException ioEx)
+                {
+                    Snackbar.Add($"File error for '{file?.Name}': {ioEx.Message}", Severity.Error);
+                }
+                catch (UnknownImageFormatException)
+                {
+                    Snackbar.Add($"Unsupported image format: {file?.Name}", Severity.Warning);
+                }
+                catch (Exception ex)
+                {
+                    Snackbar.Add($"Error processing file '{file?.Name}': {ex.Message}", Severity.Error);
+                }
+            }
+
+            // Large file warning
+            if (largSizeFiles.Any())
+            {
+                Snackbar.Add($"Some files exceeded the 10 MB limit: {string.Join(", ", largSizeFiles)}", Severity.Warning,
+                    config =>
+                    {
+                        config.VisibleStateDuration = 2000;
+                    });
+            }
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Unexpected error during file upload: {ex.Message}", Severity.Error);
+        }
+    }
+    private void ClearAsync()
+    {
+        try
+        {
+            files?.Clear();
+            largSizeFiles?.Clear();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error while clearing files: {ex.Message}", Severity.Error);
+        }
+
+    }
+    private void Remove(IBrowserFile item)
+    {
+        try
+        {
+            if (item == null)
+            {
+                Snackbar.Add("Invalid file selected for removal.", Severity.Warning);
+                return;
+            }
+
+            if (files == null)
+            {
+                Snackbar.Add("File collection is not initialized.", Severity.Error);
+                return;
+            }
+
+            bool isRemoved = files.Remove(item);
+
+            if (isRemoved)
+            {
+                largSizeFiles?.Clear();
+                Snackbar.Add($"{item.Name} removed successfully.", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"{item.Name} was not found in the file list.", Severity.Warning);
+            }
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error while removing file: {ex.Message}", Severity.Error);
+        }
+    }
+    private async Task OpenInNewTab(string url)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                Snackbar.Add("Invalid URL.", Severity.Warning);
+                return;
+            }
+
+            await JS.InvokeVoidAsync("open", url, "_blank");
+        }
+        catch (JSException jsEx)
+        {
+            Snackbar.Add($"Unable to open the link. JavaScript error: {jsEx.Message}", Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error while opening the link: {ex.Message}", Severity.Error);
+        }
+    }
+    private async Task OpenFile(IBrowserFile file)
+    {
+        try
+        {
+            if (file == null)
+            {
+                Snackbar.Add("No file selected.", Severity.Warning);
+                return;
+            }
+
+            const long maxFileSize = 10 * 1024 * 1024; // 10 MB
+
+            if (file.Size > maxFileSize)
+            {
+                Snackbar.Add($"File size exceeds the maximum allowed limit of {maxFileSize / (1024 * 1024)} MB.", Severity.Warning);
+                return;
+            }
+
+            await using var stream = file.OpenReadStream(maxFileSize);
+            await using var ms = new MemoryStream();
+
+            await stream.CopyToAsync(ms);
+
+            var bytes = ms.ToArray();
+
+            if (bytes == null || bytes.Length == 0)
+            {
+                Snackbar.Add("File content is empty.", Severity.Warning);
+                return;
+            }
+
+            await JS.InvokeVoidAsync("openFileInNewTab", bytes, file.ContentType);
+        }
+        catch (IOException ioEx)
+        {
+            Snackbar.Add($"File read error: {ioEx.Message}", Severity.Error);
+        }
+        catch (JSException jsEx)
+        {
+            Snackbar.Add($"JavaScript error while opening file: {jsEx.Message}", Severity.Error);
+        }
+        catch (OperationCanceledException)
+        {
+            Snackbar.Add("File operation was cancelled.", Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Unexpected error while opening file: {ex.Message}", Severity.Error);
+        }
+    }
+    //-----------------
+
+
+    private async Task GetAllMasters()
+    {
+        try
+        {
+            var passfailMaster = await GetMasterData(CmdNames.Get_PassFail) ?? new List<MasterData>();
+            var unitMaster = await GetMasterData(CmdNames.Get_Unit) ?? new List<MasterData>();
+            var yesNoMaster = await GetMasterData(CmdNames.Get_YesNo) ?? new List<MasterData>();
+            var failReasonMaster = await GetMasterData(CmdNames.Get_Fail_Reason) ?? new List<MasterData>();
+            var colorCodeMaster = await GetMasterData(CmdNames.Get_Color_Code) ?? new List<MasterData>();
+            var abortiveReasonMaster = await GetMasterData(CmdNames.Get_Abortive_Reason) ?? new List<MasterData>();
+
+            // ✅ Guard: Only filter if lists have data
+            var passfailForConformity = passfailMaster.Any() ? passfailMaster.Where(a => a.Master_ID != 4).ToList() : new List<MasterData>();
+
+            var passfailForInspectionResult = passfailMaster.Any() ? passfailMaster.Where(a => a.Master_ID != 3).ToList() : new List<MasterData>();
+
+            var passfailOnly = passfailMaster.Any() ? passfailMaster.Where(a => a.Master_ID != 3 && a.Master_ID != 4).ToList() : new List<MasterData>();
+
+            var yesNoOnly = yesNoMaster.Any() ? yesNoMaster.Where(a => a.Master_ID != 3).ToList() : new List<MasterData>();
+
+            _model.PassFailDefectsStatus = passfailOnly;
+            _model.PassFailGPTStatus = passfailOnly;
+            _model.PassFailMeasurementSampleSize = passfailOnly;
+            _model.UnitNoOfBagCarton = unitMaster;
+            _model.UnitNoOfCheck = unitMaster;
+            _model.YesNoInlineDone = yesNoOnly;
+            _model.YesNoPackingList = yesNoOnly;
+            _model.YesNoPackingStatus = yesNoOnly;
+            _model.PassFailInspectionResult = passfailForInspectionResult;
+            _model.FailReasonList = failReasonMaster;
+            _model.ColorList = colorCodeMaster;
+            _model.ElasticStatusList = passfailForConformity;
+            _model.ZipperStatusList = passfailForConformity;
+            _model.ConformitySizeStatusList = passfailForConformity;
+            _model.ConformityPrepackStatusList = yesNoMaster;
+            _model.EmbroideryPFList = passfailForConformity;
+            _model.AccessoriesPFList = passfailForConformity;
+            _model.BarcodePFList = passfailForConformity;
+            _model.NoPlasticPFList = passfailForConformity;
+            _model.BogoPFList = passfailForConformity;
+            _model.ThreadYNList = yesNoMaster;
+            _model.ButtonYNList = yesNoMaster;
+            _model.ZipperYNList = yesNoMaster;
+            _model.InterliningYNList = yesNoMaster;
+            _model.ElasticYNList = yesNoMaster;
+            _model.AbortiveReasonList = abortiveReasonMaster;
+
+            RegionCount = abortiveReasonMaster.Count;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading master data: {ex.Message}", Severity.Error);
+        }
+    }
+
+    #endregion
+    protected override async Task OnInitializedAsync()
+    {
+
+        try
+        {
+            // ✅ Guard : PO parameter null check
+            if (PO == null)
+            {
+                Snackbar.Add("Inspection data is missing.", Severity.Error);
+                PO = new();
+                isFatched = false;
+            }
+            else
+            {
+                var fabricBeforeSync = PO.Fabric;
+                bool isClosedRequest = PO.Is_Inspection_Complete || PO.Status_Code is 7 or 9 or 10;
+
+                // Open requests only: silent auto-sync, no confirmation popup (E11, N13, N14)
+                if (!isClosedRequest)
+                    await SyncPOdetails(askConfirmation: false);
+
+                isFatched = IsEditMode;
+                await GetSavedValues();
+
+                // Keep the saved fiber content. Replace it only when it is empty, or when it was simply
+                // the old PO fabric on an open request (E10, E11)
+                if (string.IsNullOrWhiteSpace(_model.FiberContentOnPo) ||
+                    (!isClosedRequest && _model.FiberContentOnPo == fabricBeforeSync))
+                {
+                    _model.FiberContentOnPo = PO.Fabric;
+                }
+
+
+                // // Sync the PO from SAP
+                // await SyncPOdetails();
+                // isFatched = IsEditMode;
+                // await GetSavedValues();
+                // _model.FiberContentOnPo = PO.Fabric;
+
+
+                // Roles are mutually exclusive by construction — QA/QAM-as-self vs QAM-on-sub/QAAdmin
+
+                isSelfInspector = !_CurrentUser.IsQAAdmin && PO.InspectorId.ToString() == _CurrentUser.UserCode;                 // QA, or QAM acting as their own inspector
+                isAdminOrSubEdit = _CurrentUser.IsQAAdmin || (_CurrentUser.IsQAM && PO.InspectorId.ToString() != _CurrentUser.UserCode);        // QAAdmin, or QAM editing a sub-QA's report
+
+
+                // ✅ FIX: Replace .First() with .FirstOrDefault() — THIS IS THE LINE 1352/1363
+                if (PO.InspectionTypeList != null && PO.InspectionTypeList.Any())
+                {
+                    var inspType = PO.InspectionTypeList.FirstOrDefault(a => a.Master_ID == PO.InspectionTypeId);
+
+                    inspecitonType = inspType?.Master_Name ?? "Unknown";
+
+                    if (inspType == null)
+                    {
+                        // Log warning but don't crash
+                        Snackbar.Add(
+                            $"Inspection type ID {PO.InspectionTypeId} not found in list.",
+                            Severity.Warning
+                        );
+                    }
+                }
+                else
+                {
+                    inspecitonType = "Unknown";
+                    Snackbar.Add("Inspection type list is empty.", Severity.Warning);
+                }
+            }
+
+            // ✅ Guard 3: Load masters safely
+            await GetAllMasters();
+            SetAll();
+
+            // ✅ Guard 4: Only start autosave if model is not complete
+            if (!_model.IsComplete)
+            {
+                _cts = new CancellationTokenSource();
+                _timer = new PeriodicTimer(TimeSpan.FromSeconds(20));
+                _backgroundTask = RunAutoSaveAsync(_cts.Token);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading inspection form: {ex.Message}", Severity.Error);
+            // Don't crash the circuit — close dialog gracefully
+            MudDialog?.Close();
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task Submit()
+    {
+        if (isSubmitting) return;
+        isSubmitting = true;
+
+        try
+        {
+            bool? dres = await DialogService.ShowMessageBox("Confirmation", "Do you want to submit Inspection details?", yesText: "  Yes!  ", cancelText: "   No   ");
+            if (dres == null)
+            {
+                return;
+            }
+            else
+            {
+                if (isSelfInspector && _model.IsComplete)
+                {
+                    await ShowErrorDialog("Validation", "This report is already completed and cannot be modified.");
+                    return;
+                }
+                IsCompleteInSubmit = true;
+                _model.IsComplete = true;
+                await Save();
+            }
+        }
+        finally
+        {
+            isSubmitting = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task<string> ProcessFileUploadsAsync(string? existingAttachmentValue)
+    {
+        if (files.Count == 0) return string.IsNullOrEmpty(existingAttachmentValue) ? string.Empty : existingAttachmentValue;
+
+
+        var folderPath = Path.Combine(Directory.GetCurrentDirectory(), UploadFolder);
+        if (!Directory.Exists(folderPath))
+            Directory.CreateDirectory(folderPath);
+
+        fileNames = new List<string>();
+        foreach (var file in files)
+        {
+            var fileName = Guid.NewGuid() + Path.GetExtension(file.Name);
+            var filePath = Path.Combine(folderPath, fileName);
+
+            await using var inputStream = file.OpenReadStream(MaxFileSize);
+            await using var fileStream = new FileStream(filePath, FileMode.Create);
+            await inputStream.CopyToAsync(fileStream);
+
+            fileNames.Add(Path.Combine(relPath, fileName).Replace("\\", "/"));
+        }
+
+        ClearAsync();
+
+        // Append, don't overwrite — same fix already applied to GenAttachmentFirst
+        return string.IsNullOrEmpty(existingAttachmentValue)
+            ? string.Join(",", fileNames)
+            : existingAttachmentValue + "," + string.Join(",", fileNames);
+    }
+    private async Task Save()
+    {
+        fileNames = new List<string>(); // reset defensively at top, avoids null-ref on failure cleanup
+
+        // ─── File upload — routed by role, BEFORE validation so checks below see current values ───
+        if (isSelfInspector)
+        {
+            _model.TestReportAttachment = await ProcessFileUploadsAsync(_model.TestReportAttachment);
+        }
+        else if (isAdminOrSubEdit)
+        {
+            _model.GenAttachmentFirst = await ProcessFileUploadsAsync(_model.GenAttachmentFirst);
+        }
+        // ─── Validations ─────────────────────────────────────────────
+        if (isSelfInspector && _model.IsComplete && !IsCompleteInSubmit)
+        {
+            await ShowErrorDialog("Validation", "This report is already completed and cannot be modified.");
+            return;
+        }
+        if (PO.InspId <= 0)
+        {
+            await ShowErrorDialog("Validation", "PO and Inpection Data is missing.");
+            return;
+        }
+        if (_model.InspectionResult == 2 && _model.Reason_for_fail == 0)
+        {
+            await ShowErrorDialog("Validation", "Fail Reason is required.");
+            return;
+        }
+        if (_model.GptStatus == 2 && string.IsNullOrEmpty(_model.GptApprovedBy))
+        {
+            await ShowErrorDialog("Validation", "GPT Approved By field is required.");
+            return;
+        }
+        if (_model.GptStatus == 2 && string.IsNullOrEmpty(_model.GptApprovedDate?.ToString()))
+        {
+            await ShowErrorDialog("Validation", "GPT Approved Date field is required.");
+            return;
+        }
+        if (_model.gptElasticStatus == 2 && string.IsNullOrEmpty(_model.gptElasticApprovedBy))
+        {
+            await ShowErrorDialog("Validation", "Elastic approved by is required.");
+            return;
+        }
+        if (_model.gptElasticStatus == 2 && string.IsNullOrEmpty(_model.gptElasticApprovedDate?.ToString()))
+        {
+            await ShowErrorDialog("Validation", "Elastic approved date is required.");
+            return;
+        }
+        if (_model.ZipperStatus == 2 && string.IsNullOrEmpty(_model.ZipperApprovedBy))
+        {
+            await ShowErrorDialog("Validation", "Zipper Approved By field is required.");
+            return;
+        }
+        if (_model.ZipperStatus == 2 && string.IsNullOrEmpty(_model.ZipperApprovedDate?.ToString()))
+        {
+            await ShowErrorDialog("Validation", "Zipper Approval Date field is required.");
+            return;
+        }
+
+        // ─── Attachment-required-on-complete, checked against the CORRECT field per role ───
+        if (_model.IsComplete)
+        {
+            if (isSelfInspector && string.IsNullOrEmpty(_model.TestReportAttachment))
+            {
+                await ShowErrorDialog("Validation!", " QA Attachment is required.");
+                _model.IsComplete = false;
+                return;
+            }
+            // if (isAdminOrSubEdit && string.IsNullOrEmpty(_model.GenAttachmentFirst))
+            // {
+            //     await ShowErrorDialog("Validation!", "Admin/QAM attachment is required.");
+            //     return;
+            // }
+        }
+
+        await form.Validate();
+        if (form.IsValid)
+        {
+            // ─── Set required fields ──────────────────────────────────────
+            _model.UserId = _CurrentUser.UserId;
+            _model.InspectionId = PO.InspId;
+            _model.InspectorCode = _CurrentUser.UserCode;
+
+            if (isAdminOrSubEdit)
+                _model.Is_Edit_By_Admin = true;
+
+            // ─── Remove protected defect rows before saving ───────────────
+            _model.Defects.RemoveAll(a => protectedIds.Contains(a.Defects_Id));
+
+            // ─── Handle Abortive (InspectionResult == 4) ─────────────────
+            if (_model.InspectionResult == 4)
+            {
+                _model.AbortiveReasonIds = SelectedRgn;
+                // GPT fields
+                _model.GptNo = string.Empty;
+                _model.GptStatus = 0;
+                _model.GptApprovedBy = string.Empty;
+                _model.GptApprovedDate = null;
+                _model.Area_Of_Fail_GPTR = string.Empty;
+
+                // Elastic fields
+                _model.gptElasticNo = string.Empty;
+                _model.gptElasticStatus = 0;
+                _model.gptElasticApprovedBy = string.Empty;
+                _model.gptElasticApprovedDate = null;
+
+                // Zipper fields
+                _model.ZipperRptNo = string.Empty;
+                _model.ZipperStatus = 0;
+                _model.ZipperApprovedBy = string.Empty;
+                _model.ZipperApprovedDate = null;
+
+                // Packing / inline fields
+                _model.InlineDone = 0;
+                _model.PackingList = 0;
+
+                // Date fields
+                _model.PpsReleaseDate = null;
+                _model.MFG_Date = null;
+
+                // Season / Color
+                _model.Season = string.Empty;
+                _model.ColorCode = 0;
+
+                // Measurement fields
+                _model.measurementSampleQty = null;
+                _model.MeasurementSampleSize = 0;
+                _model.MeasurementAttachment = string.Empty;
+
+                // Fiber content fields
+                _model.FiberContentOnPo = string.Empty;
+                _model.FiberContentOnTestReport = string.Empty;
+                _model.FiberContentOnWc = string.Empty;
+
+                // GSM fields
+                _model.GsmOnPo = string.Empty;
+                _model.GsmOnTestReport = string.Empty;
+                _model.GsmOnBulk = string.Empty;
+
+                // Fit
+                _model.Fit = string.Empty;
+
+                // Bag/Carton check fields
+                _model.NoOfCheck = null;
+                _model.NoOfCheckUnit = 0;
+                _model.SelectedBagCartonsNo = string.Empty;
+                _model.NoOfPrepackCheck = null;
+
+                // Inspection result fields
+                _model.Reason_for_fail = 0;
+                _model.Workmanship = string.Empty;
+                _model.DefectsAllowed = 0;
+                _model.DefectsStatus = 0;
+
+                // Conformity PASS/FAIL fields
+                _model.conformitySize = string.Empty;
+                _model.conformitySizeStatus = 0;
+                _model.embroideryPf = 0;
+                _model.accessoriesPf = 0;
+                _model.barcodePf = 0;
+                _model.noPlasticPf = 0;
+                _model.bogoPf = 0;
+
+                // Conformity YES/NO fields
+                _model.conformityPrepack = string.Empty;
+                _model.conformityPrepackStatus = 0;
+                _model.threadYn = 0;
+                _model.buttonYn = 0;
+                _model.zipperYn = 0;
+                _model.interliningYn = 0;
+                _model.elasticYn = 0;
+
+                // Remarks
+                _model.RemarkComment = string.Empty;
+                _model.Note = string.Empty;
+
+                // ✅ Clear defects — abortive has no defect rows
+                _model.Defects.Clear();
+
+                // ✅ Admin fields — only clear if NOT QA admin
+                if (isSelfInspector)
+                {
+                    _model.GPT_Comm_Approval_Date = null;
+                    _model.GTP_Comm_Approved_By = string.Empty;
+                    _model.CommApprovalDoc = string.Empty;
+                    _model.DebitAmount = 0;
+                    _model.AdminRemark = string.Empty;
+                }
+
+            }
+            else
+            {
+                _model.AmtTravelling = 0;
+                _model.AbortiveReasonIds = string.Empty;
+                _model.OtherAbortiveReason = string.Empty;
+            }
+
+            var res1 = await ApiMasterService.CallingAPI<GenRes, InspectionModel>(AllApiNames.SAVE_INSPECT_DATA!, _model);
+            if (res1.responseCode.Equals(0))
+            {
+                _model.InspectId = res1.recordId;
+                Snackbar.Add("Inspection saved successfully.", Severity.Success);
+                if (_model.IsComplete)
+                {
+                    MudDialog?.Close(DialogResult.Ok(true));
+                }
+                return;
+            }
+            else
+            {
+                foreach (var item in fileNames) // now guaranteed non-null
+                {
+                    try { File.Delete("wwwroot" + item); }
+                    catch { /* ignore file delete errors */ }
+                }
+                await ShowErrorDialog("Error!", res1.responseMessage!);
+            }
+            StateHasChanged();
+        }
+        else
+        {
+            return;
+        }
+
+    }
+
+    private void CloseDialog()
+    {
+        MudDialog?.Close();
+    }
+
+    private async Task ShowErrorDialog(string Tital, string message)
+    {
+        await DialogService.ShowMessageBox(Tital, message);
+    }
+    private async Task GetSavedValues()
+    {
+        try
+        {
+            // ✅ Guard: PO null check
+            if (PO == null)
+            {
+                await ShowErrorDialog("Warning", "PO data is missing.");
+                return;
+            }
+
+            if (string.IsNullOrEmpty(PO.PoNumber))
+            {
+                await ShowErrorDialog("Warning", "PO Number is missing.");
+                return;
+            }
+
+            if (PO.InspId <= 0)
+            {
+                // New inspection — nothing to fetch
+                DisplayAQL();
+                ReOrderDefects();
+                return;
+            }
+
+            var selectRequest = new SelectListReq
+            {
+                Id = PO.InspId,
+                Cmd = CmdNames.Get_Inspect_Data,
+                StrField = string.Empty
+            };
+
+            IsLoading = true; StateHasChanged();
+            var existingInspection = await ApiMasterService.CallingAPI<InspectResponse, SelectListReq>(AllApiNames.GET_INSPECT_DATA!, selectRequest);
+            IsLoading = false; StateHasChanged();
+
+            // ✅ Guard: Null API response
+            if (existingInspection == null)
+            {
+                Snackbar.Add("No response from server. Please try again.", Severity.Error);
+                return;
+            }
+
+            if (existingInspection.responseCode == 0 && existingInspection.responseMessage?.ToUpper() == "SUCCESS")
+            {
+                // ✅ Guard: InspectDetails null check
+                if (existingInspection.InspectDetails != null && existingInspection.InspectDetails.INSPECT_ID > 0)
+                {
+                    _model = mapper.Map<InspectionModel>(existingInspection.InspectDetails);
+                    _model.Defects.Clear();
+
+                    // ✅ Guard: Defects null check
+                    if (existingInspection.Defects != null)
+                    {
+                        foreach (var detail in existingInspection.Defects)
+                        {
+                            _model.Defects.Add(mapper.Map<InspectionDefectDto>(detail));
+                        }
+                    }
+
+                    isShow = _model.IsComplete;
+                }
+
+                // ✅ Guard: AQL list null check
+                _model.AqlData = existingInspection.AQLList?.Any() == true ? existingInspection.AQLList : new List<AQLDataResponse>();
+
+                _model.POOfferQuantity = PO.OfferedQty.ToString("0");
+                _model.POTotalQuantity = PO.POTotalQty.ToString("0");
+            }
+
+            DisplayAQL();
+            ReOrderDefects();
+        }
+        catch (Exception ex)
+        {
+            IsLoading = false;
+            Snackbar.Add($"Error loading inspection data: {ex.Message}", Severity.Error);
+        }
+    }
+    // Find Button Logic
+
+    private async Task AddToDefectList()
+    {
+
+        InspectionDefectDto obj = new InspectionDefectDto();
+        if (!string.IsNullOrEmpty(defectDto.Defects))
+        {
+            if (defectDto.Minor == 0 && defectDto.Major == 0)
+            {
+                await ShowErrorDialog("Validation", "Major or Minor value is required.");
+                return;
+            }
+
+            int i = 1;
+            var total = _model.Defects.Where(a => !protectedIds.Contains(a.Defects_Id)).OrderBy(d => d.SNo).ToList();
+            if (total.Count > 0)
+                i = total.Max(a => a.SNo) + 1;
+
+
+            _model.Defects.Add(new InspectionDefectDto
+            {
+                SNo = i,
+                Defects = defectDto.Defects,
+                Dimension = defectDto.Dimension,
+                Major = defectDto.Major,
+                Minor = defectDto.Minor,
+                DefectId = Guid.NewGuid()
+            });
+            ReOrderDefects();
+
+            defectDto = new();
+            StateHasChanged();
+        }
+        else
+        {
+            await ShowErrorDialog("Validation", "Defect is required.");
+        }
+
+
+
+
+    }
+    private async Task RemoveItem(InspectionDefectDto request)
+    {
+        bool? dres = await DialogService.ShowMessageBox("Confirmation", "Do you want to remove this defect?", yesText: "  Yes!  ", cancelText: "   No   ");
+        if (dres == null)
+        {
+            return;
+        }
+        else
+        {
+            _model.Defects.Remove(request);
+            ReOrderDefects();
+            StateHasChanged();
+        }
+
+    }
+    private void ViewPOIRDetails()
+    {
+        var parameters = new DialogParameters
+        {
+            { "PO",  PO  },
+            { "IsEditMode", PO != null },
+            { "IsDisplayChangeButton",  isShow  },
+        };
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Large, FullWidth = true };
+
+        DialogService.Show<POIRDetails>("Inspection Request Details", parameters, options);
+
+    }
+
+
+    private async Task SyncPOdetails(bool askConfirmation = true)
+    {
+        if (askConfirmation)
+        {
+            bool? dres = await DialogService.ShowMessageBox("Confirmation", "Do you want to synchronize PO details?",
+                yesText: "  Yes  ", cancelText: "   No  ");
+            if (dres == null) return;
+        }
+        try
+        {
+            isRunning = true;
+            progress = 0;
+
+            var progressReporter = new Progress<int>(p => { progress = p; InvokeAsync(StateHasChanged); });
+            var result = await _poSyncService.SyncAsync(PO, _CurrentUser.UserId, progressReporter);
+
+            // Manual sync: always show the result.
+            // Auto sync: show only when something changed, failed or needs attention.
+            bool nothingChanged = result.Success && result.Message == PoSyncMessages.AlreadySynced;
+            if (askConfirmation || !nothingChanged)
+            {
+                string title = result.Issue == PoSyncIssue.None ? "Info" : "Warning";
+                await ShowErrorDialog(title, result.Message);
+            }
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorDialog("Error!", ex.Message!);
+        }
+        finally
+        {
+            progress = 0;
+            isRunning = false;
+            await InvokeAsync(StateHasChanged);
+        }
+
+    }
+
+
+    private void DisplayAQL()
+    {
+        try
+        {
+            var offerqty = _model.OfferedQuantity;
+
+            // ✅ Guard: AqlData null check
+            if (_model.AqlData == null || !_model.AqlData.Any())
+                return;
+
+            // ✅ Fix: .SingleOrDefault() is correct here but add null guard
+            var aqlrow = _model.AqlData.FirstOrDefault(a => a.BATCH_SIZE_MIN <= offerqty && a.BATCH_SIZE_MAX >= offerqty);
+
+            if (aqlrow == null)
+                return;
+
+            var defect = _model.Defects.SingleOrDefault(d => d.Defects_Id == 1002);
+            if (defect == null)
+            {
+                defect = new InspectionDefectDto { Defects_Id = 1002 };
+                _model.Defects.Add(defect);
+            }
+
+            defect.Defects = "Allowed";
+            defect.Major = aqlrow.AQL_2_5_MAJOR;
+            defect.Minor = aqlrow.AQL_2_5_MINOR;
+
+            _model.AqlSampleSize = aqlrow.SAMPLE_SIZE;
+
+            ReOrderDefects();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error calculating AQL: {ex.Message}", Severity.Error);
+        }
+    }
+
+
+    private void ReOrderDefects()
+    {
+
+        var total = _model.Defects.Where(a => !protectedIds.Contains(a.Defects_Id)).OrderBy(d => d.SNo).ToList();
+        int i = 1;// total.Max(a => a.SNo) + 1;
+        foreach (var item in total)
+        {
+            item.SNo = i++;
+        }
+
+        var defect = _model.Defects.SingleOrDefault(d => d.Defects_Id == 1001);
+        if (defect == null)
+        {
+            defect = new InspectionDefectDto { Defects_Id = 1001 };
+            _model.Defects.Add(defect);
+        }
+        defect.Defects = "Total";
+        defect.Major = total.Sum(a => a.Major);
+        defect.Minor = total.Sum(a => a.Minor);
+        defect.SNo = i++;
+
+        var itemL = _model.Defects.Where(d => d.Defects_Id == 1002).FirstOrDefault();
+        if (itemL != null)
+            itemL.SNo = i;
+
+    }
+    private async Task ViewAQL()
+    {
+
+        var parameters = new DialogParameters
+        {
+            ["AqlList"] = _model.AqlData
+        };
+        var options = new DialogOptions
+        {
+            CloseButton = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog = DialogService.Show<AQLMasterList>($"AQL Master List", parameters, options);
+
+    }
+
+    protected async Task OpenPoPdf(string PoNumber)
+    {
+        IsLoading = true;
+        var POnumbers = PoNumber.Split('~').ToList();
+        foreach (var po in POnumbers)
+        {
+            try
+            {
+
+                var (bytes, filename) = await _PODownloadService.TryGetPOPdfAsync(po.Trim());//"5900998021"
+                string base64 = Convert.ToBase64String(bytes);
+                await JS.InvokeVoidAsync("openPOPdfInNewTab", base64, filename);
+
+
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"{ex.Message}", Severity.Error, config =>
+                {
+                    config.VisibleStateDuration = 10000; // milliseconds (10 seconds)
+                    config.ShowTransitionDuration = 500;
+                    config.HideTransitionDuration = 500;
+                });
+            }
+            finally
+            {
+                IsLoading = false;
+            }
+        }
+
+    }
+
+
+}
+<style>
+    .card {
+        max-width: 100%;
+        margin: auto;
+    }
+
+        .card h6 {
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+
+        .card h5 {
+            font-weight: 600;
+        }
+
+    thead th {
+        position: sticky;
+        top: 0;
+        background: #212529;
+        color: white;
+    }
+
+    .overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.6);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+    }
+
+    .progress-container {
+        position: relative;
+        width: 50%;
+        height: 30px;
+        background: #ddd;
+        border-radius: 10px;
+        overflow: hidden;
+    }
+
+    .progress-bar {
+        height: 100%;
+        background: #9acafb;
+        transition: width 0.2s;
+    }
+
+    .progress-text {
+        position: absolute;
+        width: 100%;
+        text-align: center;
+        top: 50%;
+        transform: translateY(-50%);
+        color: black;
+        font-weight: bold;
+    }
+</style>
+<style>
+    .muddividr {
+        margin: 0 !important;
+        border-color: #f408b2 !important;
+        border-width: 2px;
+    }
+
+    .mud-breadcrumbs {
+        padding: 12px 12px;
+    }
+
+    .floating-search-btn {
+        position: fixed;
+        top: 50%;
+        right: 0;
+        transform: translateY(-50%);
+        background-color: #e91e63;
+        color: white;
+        padding: 10px 6px;
+        border-radius: 8px 0 0 8px;
+        cursor: pointer;
+        writing-mode: vertical-rl;
+        text-orientation: mixed;
+        font-weight: bold;
+        z-index: 999;
+        box-shadow: 0 0 8px rgba(0,0,0,0.2);
+    }
+
+        .floating-search-btn:hover {
+            background-color: #c2185b;
+        }
+
+    .search-modal {
+        position: fixed;
+        top: 170px;
+        right: 35px;
+        background-color: white;
+        width: 320px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+        border-radius: 8px;
+        z-index: 1000;
+    }
+
+        .search-modal .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .search-modal .close-btn {
+            background: none;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+        }
+
+    .mud-simple-table.mud-table-dense * tr td, .mud-simple-table.mud-table-dense * tr th {
+        padding: 2px 4px
+    }
+
+    .font8 {
+        font-size: 0.8rem;
+    }
+
+    .mud-list-subheader-extended {
+        padding-top: 0px;
+        padding-bottom: 0px;
+        margin-bottom: -12px !important;
+    }
+
+    .mud-list-item-extended {
+        padding-bottom: 0px !important;
+    }
+
+    .mud-list-item-gutters-extended.mud-list-item-dense-extended {
+        padding-left: 4px;
+        padding-right: 4px;
+        padding-top: 0px;
+        padding-bottom: 0px;
+    }
+
+    .mud-list-subheader-gutters-extended {
+        padding-left: 8px;
+        padding-right: 8px;
+        padding-top: 0px !important;
+        padding-bottom: 0px !important;
+    }
+
+    .mud-icon-button-edge-margin-end {
+        color: red !important;
+    }
+
+    .mud-input > input.mud-input-root-outlined, div.mud-input-slot.mud-input-root-outlined {
+        padding: 15px 10px;
+        font-size: 12px;
+        height: 20px !important;
+    }
+
+
+
+    .filter-paper {
+        padding-left: 8px !important;
+        padding-right: 8px !important;
+        padding-top: 25px !important;
+        padding-bottom: 5px !important;
+        margin-left: 22px !important;
+        margin-right: 28px !important;
+        margin-bottom: 20px !important;
+    }
+
+    .mud-link {
+        font-size: 0.8rem !important;
+    }
+
+    .mud-list-item-multiselect-extended.mud-list-item-multiselect-checkbox-extended {
+        padding-inline-end: 0px;
+    }
+
+    .border1pxblack {
+        border: 1px solid #ffffffeb;
+        background-color: #ed008b !important;
+        color: white;
+    }
+
+    .border1pxblack1 {
+        background-color: #ed008b !important;
+        color: white;
+        border: none !important;
+    }
+
+    .my-custom-select {
+        position: relative;
+    }
+
+        .my-custom-select .mud-popover {
+            padding-top: 20px;
+        }
+
+    .filter-close-button {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        cursor: pointer;
+        background-color: white;
+        border: 1px solid #ccc;
+        border-radius: 50%;
+        padding: 2px;
+        z-index: 99999;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+
+    .mud-list-subheader-extended {
+        top: -6px !important;
+    }
+
+    .mud-list-subheader-extended {
+        position: relative !important;
+    }
+
+    .disabled-div {
+        pointer-events: none; /* Prevent clicks */
+        opacity: 0.6; /* Dimmed look */
+        background-color: #f0f0f0; /* Optional: lighter background */
+        user-select: none; /* Prevent text selection */
+    }
+
+    .mud-dialog-title {
+        border-bottom: 1px solid #1413140d;
+    }
+
+    .mud-dialog-actions {
+        border-top: 1px solid #1413140d;
+    }
+
+    .mud-dialog-content {
+        padding-top: 1.5rem !important;
+        padding-bottom: 1.5rem !important;
+    }
+
+    .mud-dialog-title {
+        padding: 11px !important;
+    }
+
+    .mud-message-box__yes-button {
+        color: white !important;
+        background-color: green !important;
+    }
+
+    .mud-message-box__cancel-button {
+        color: white !important;
+        background-color: red !important;
+    }
+
+    .mud-message-box .mud-dialog-actions {
+        display: flex;
+        flex-direction: row-reverse;
+        justify-content: flex-start;
+    }
+</style>
+<style>
+
+    .mud-dialog-title {
+        color: white !important;
+        background: linear-gradient(to right, #0e6cb1, #ffffff) !important;
+    }
+
+    .mud-dialog-actions {
+        background: linear-gradient(to right, #3b7ed12b, #ffffff) !important
+    }
+
+</style>

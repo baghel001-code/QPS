@@ -1,0 +1,189 @@
+﻿@inherits QpsPageBase
+@page "/AsnReqList"
+@using Admin.Components.Shared
+@using Admin.Components.UIControls
+@using System.Security.Claims
+@using Admin.Components.UIControls.BaseComponents
+@using Admin.Components.UIControls.SearchFilters
+@using Admin.Services
+@using Application.DTOs.Asn
+@using ClosedXML.Excel
+@attribute [Authorize(Policy = "ASNAccess")]
+
+<MudGrid Class="justify-end">
+    <MudItem>
+        <MudBreadcrumbs Items="_items">
+            <ItemTemplate Context="item">
+                <MudLink Href="@item.Href">@item.Text.ToUpper()</MudLink>
+            </ItemTemplate>
+        </MudBreadcrumbs>
+    </MudItem>
+</MudGrid>
+<MudTable Items="@_pendingRows" Loading="@IsLoading" Dense="true" FixedHeader="true" Height="1000px" Hover="true" Elevation="0" Class="mt-2">
+    <HeaderContent>
+        <MudTh>S.No.</MudTh>
+        <MudTh>Action</MudTh>
+        <MudTh>PO#</MudTh>
+        <MudTh>Insp.#</MudTh>
+
+        <MudTh>Buyer</MudTh>
+        <MudTh>Vendor</MudTh>
+        <MudTh>Category</MudTh>
+        <MudTh>Product</MudTh>
+        <MudTh>Color</MudTh>
+        <MudTh>MRP</MudTh>
+
+        <MudTh>Ship Qty</MudTh>
+        <MudTh>ASN Qty</MudTh>
+        <MudTh>Balance Qty</MudTh>
+        <MudTh>ASN Req.Date</MudTh>
+        <MudTh>ASN Status</MudTh>
+        <MudTh>Buyer Remark</MudTh>
+    </HeaderContent>
+    <RowTemplate Context="row">
+        <MudTd DataLabel="S.No.">@row.Sno</MudTd>
+        <MudTd>
+            <MudChip T="string" OnClick="() => ASNUpdateDialog(row)" Variant="Variant.Filled" Color="Color.Primary">Update ASN</MudChip>
+        </MudTd>
+        <MudTd DataLabel="PO#">
+            <MudChip T="string" OnClick="() => ConfirmDownload(row.PoNumberWithLinkPo)" Variant="Variant.Filled" Color="Color.Secondary">@row.PoNumberWithLinkPo</MudChip>
+        </MudTd>
+        <MudTd DataLabel="Inspection#">
+            <MudChip T="string" OnClick="() => ViewReport(row.INSPECT_ID)" Variant="Variant.Filled" Color="Color.Success">@row.InspectionNumber</MudChip>
+        </MudTd>
+
+        <MudTd DataLabel="Buyer">@row.BUYER_NAME [@row.BUYER_ID]</MudTd>
+        <MudTd DataLabel="Vendor">@row.VENDOR_NAME [@row.VENDOR_CODE]</MudTd>
+        <MudTd DataLabel="Category">@row.CATEGORY</MudTd>
+        <MudTd DataLabel="Product">@row.PRODUCT</MudTd>
+        <MudTd DataLabel="Color">@row.COLOR</MudTd>
+        <MudTd DataLabel="MRP">@row.MRP</MudTd>
+
+        <MudTd DataLabel="Ship Qty">@row.ShipQty.ToString("N0")</MudTd>
+        <MudTd DataLabel="ASN Qty">@row.RequestedQty.ToString("N0")</MudTd>
+        <MudTd DataLabel="Balance Qty">@row.BalanceQty.ToString("N0")</MudTd>
+        <MudTd DataLabel="Date">@row.DateOfCreation.ToString("dd-MMM-yyyy")</MudTd>
+        <MudTd DataLabel="Status">
+            <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Filled">
+                @row.Status
+            </MudChip>
+        </MudTd>
+        <MudTd DataLabel="Inspection#">@row.Remarks</MudTd>
+    </RowTemplate>
+    <LoadingContent>
+        <MudText>Loading...</MudText>
+    </LoadingContent>
+</MudTable>
+<Loader IsVisible="@IsLoading" />
+
+
+@code {
+   
+    [Inject] protected InspectionDialogLauncherFactory _LauncherFactory { get; set; } = default!;
+    private List<BreadcrumbItem> _items = new List<BreadcrumbItem>
+    {
+        new BreadcrumbItem("All ASN Requests", href: "/AsnReqList",disabled: true),
+        new BreadcrumbItem("Pending Request", href: "#", disabled: true)
+    };
+    private List<AsnSummaryFlatRow> _pendingRows = new();
+
+    protected bool IsLoading = false;
+
+    protected override async Task OnUserInitializedAsync()
+    {
+        await GetASNSummary();
+    }
+    private async Task GetASNSummary()
+    {
+        ASNRequest_PendingComplete req = new ASNRequest_PendingComplete() { CMD = "GET_PENDING", UserType = _CurrentUser.RoleTypeCode, UserCode = _CurrentUser.UserCode, UserId = _CurrentUser.UserId };
+        IsLoading = true;
+        var res = await ApiMasterService.CallingAPI<PendingASNList, ASNRequest_PendingComplete>(AllApiNames.GET_PENDING_ASN_REQUEST!, req);
+        _pendingRows = res.asnSummaryFlatRows;
+        _pendingRows = _pendingRows.Select((row, i) => { row.Sno = i + 1; return row; }).ToList();
+        IsLoading = false;
+    }
+
+    private void GetASNDoc1(string path)
+    {
+        IsLoading = true;
+        _jS.InvokeVoidAsync("open", path, "_blank");
+        IsLoading = false;
+    }
+
+    protected async Task ASNUpdateDialog(AsnSummaryFlatRow? modelObj = null)
+    {
+        AsnRequestModel requestDetails = new();
+        if (modelObj != null)
+        {
+            requestDetails.PoNumber = modelObj.PoNumber;
+            requestDetails.InspectionNo = modelObj.InspectionNumber;
+            requestDetails.ShipQty = modelObj.ShipQty;
+            requestDetails.AsnId = modelObj.ASN_REQ_ID;
+            requestDetails.InspectId = modelObj.INSPECT_ID;
+            requestDetails.InspId = modelObj.INSP_ID;
+            requestDetails.AsnQuantity = modelObj.RequestedQty;
+            requestDetails.Remarks = modelObj.Remarks;
+            requestDetails.PoNumberwithLinkPo = modelObj.PoNumberWithLinkPo;
+            requestDetails.Buyer = modelObj.BUYER_NAME;
+            requestDetails.BuyerCode = modelObj.BUYER_ID.Split('_')[1].Trim();
+            requestDetails.VendorCode = modelObj.VENDOR_CODE;
+            requestDetails.VendorName = modelObj.VENDOR_NAME;
+
+        }
+
+        var currentRole = new UserRoleContext
+        {
+            IsASN = true,
+        };
+
+        var launcher = _LauncherFactory.ResolveAsn(currentRole);
+        var refresh = await launcher.ShowAsync(_dialogService, requestDetails);
+        if (refresh) await GetASNSummary();
+        StateHasChanged();
+    }
+}
+<style>
+    .mud-table-container {
+        max-height: 48vh;
+    }
+
+    .asn-chip {
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+        .asn-chip:hover {
+            font-weight: 700;
+            background-color: #ed008b !important;
+            color: #ffffff !important;
+            transform: scale(1.05);
+            box-shadow: var(--mud-elevation-3);
+        }
+</style>
+<style>
+    .mud-breadcrumbs {
+        padding: 12px 12px;
+    }
+
+    /* Target MudTable header row */
+    .mud-table thead tr th {
+        background-color: #ed008b !important;
+        color: #ffffff !important;
+        font-weight: bold !important;
+    }
+
+    .mud-table-cell {
+        padding-inline-start: 5px !important;
+        padding-inline-end: 5px !important;
+    }
+
+    .highlight {
+        background-color: yellow;
+        color: darkblue;
+        font-weight: bold;
+    }
+
+</style>
+
+

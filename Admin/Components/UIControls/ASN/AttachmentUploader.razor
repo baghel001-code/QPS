@@ -1,0 +1,292 @@
+﻿@using SixLabors.ImageSharp
+@using SixLabors.ImageSharp.Formats
+@using SixLabors.ImageSharp.Formats.Jpeg
+@using SixLabors.ImageSharp.Formats.Png
+@using SixLabors.ImageSharp.Processing
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<MudStack Row="true">
+    <MudFileUpload T="IReadOnlyList<IBrowserFile>"
+                   Accept="@Accept"
+                   FilesChanged="OnFilesSelected"
+                   MaximumFileCount="@MaxFileCount"
+                   MaxFileSize="@MaxFileSize"
+                   Disabled="@Disabled">
+        <ActivatorContent>
+            <MudButton Variant="Variant.Filled"
+                       Color="MudBlazor.Color.Primary"
+                       StartIcon="@Icons.Material.Filled.CloudUpload">
+                @ButtonText
+            </MudButton>
+        </ActivatorContent>
+        <SelectedTemplate>
+            @if (_newFiles.Any())
+            {
+                <MudList T="string">
+                    @foreach (var uploaded in _newFiles)
+                    {
+                        <MudListItem Icon="@Icons.Material.Filled.AttachFile">
+                            @Path.GetFileName(uploaded.RelativePath) <code>@uploaded.FileSize</code>
+                            <MudButton Variant="Variant.Outlined" OnClick="@(() => RemoveNewFile(uploaded.RelativePath))">remove</MudButton>
+                            <MudButton Variant="Variant.Outlined" Color="MudBlazor.Color.Secondary" OnClick="@(() => OpenInNewTab(uploaded.RelativePath))">Preview</MudButton>
+                        </MudListItem>
+                    }
+                </MudList>
+            }
+        </SelectedTemplate>
+    </MudFileUpload>
+</MudStack>
+@if (Required && _touched && !IsValid)
+{
+    <MudText Color="MudBlazor.Color.Error" Typo="Typo.caption">@RequiredErrorText</MudText>
+}
+@if (_largeFiles.Count > 0)
+{
+    <div style="display:flex;flex-wrap:wrap;gap:10px;">
+        <MudText>Sorry, the following file(s) are too large. Please choose files smaller than @(MaxFileSize / 1024 / 1024) MB.</MudText>
+        @foreach (var name in _largeFiles)
+        {
+            <code>@name<br /></code>
+        }
+    </div>
+}
+
+@code {
+
+
+    [Inject] private IWebHostEnvironment Env { get; set; } = default!;
+
+    [Parameter] public string Accept { get; set; } = ".png, .jpg, .pdf, .docx";
+    [Parameter] public int MaxFileCount { get; set; } = 10;
+    [Parameter] public long MaxFileSize { get; set; } = 10 * 1024 * 1024;
+    [Parameter] public int ImageMaxWidth { get; set; } = 1024;
+    [Parameter] public int JpegQuality { get; set; } = 80;
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string ButtonText { get; set; } = "Upload image / pdf files upto 10MB";
+    [Parameter] public bool Required { get; set; } = false;
+    [Parameter] public string RequiredErrorText { get; set; } = "This attachment is required.";
+
+    /// <summary>Physical folder under wwwroot, e.g. "uploads/inspection".</summary>
+    [Parameter] public string UploadFolder { get; set; } = "uploads";
+
+    /// <summary>Url-relative prefix stored/returned in the path, e.g. "/uploads/inspection".</summary>
+    [Parameter] public string RelPath { get; set; } = "/uploads";
+
+    /// <summary>Existing comma-separated attachment path already saved in the DB/model.</summary>
+    [Parameter] public string? ExistingAttachmentPath { get; set; }
+
+    /// <summary>Fires with the FULL combined path (existing + newly saved) any time it changes — bind this directly to your model field.</summary>
+    [Parameter] public EventCallback<string> ExistingAttachmentPathChanged { get; set; }
+
+    private string StagingFolder => Path.Combine(Env.WebRootPath, UploadFolder, "_staging");
+
+    private record UploadedFile(string RelativePath, string FileSize, string DbPath = "");
+    private readonly List<UploadedFile> _newFiles = new();
+    //private readonly List<string> _newFiles = new();   // relative paths of files persisted to disk THIS session, not yet committed
+    private readonly List<string> _largeFiles = new();
+    private bool _touched;
+
+    private string CombinedPath =>
+        string.IsNullOrEmpty(ExistingAttachmentPath)
+            ? string.Join(",", _newFiles.Select(f => f.RelativePath))
+            : (_newFiles.Any()
+                ? ExistingAttachmentPath + "," + string.Join(",", _newFiles.Select(f => f.RelativePath))
+                : ExistingAttachmentPath);
+
+    public bool IsValid => !Required || !string.IsNullOrWhiteSpace(CombinedPath);
+
+    // ── Called by parent's Save() on API failure — deletes ONLY newly-added files, leaves existing ones untouched ──
+    public Task RollbackNewFilesAsync()
+    {
+        foreach (var relPath in _newFiles.ToList())
+        {
+            DeletePhysicalFile(relPath.RelativePath);
+        }
+        _newFiles.Clear();
+        return ExistingAttachmentPathChanged.InvokeAsync(ExistingAttachmentPath ?? string.Empty);
+    }
+
+    public string GetFilesPath()
+    {
+        return string.Join(",", _newFiles.Select(f => f.DbPath));
+    }
+
+    // ── Called by parent's Save() on success — just clears tracking, keeps files on disk ──
+    public void CommitNewFiles()
+    {
+        var finalFolder = Path.Combine(Env.WebRootPath, UploadFolder);
+        if (!Directory.Exists(finalFolder)) Directory.CreateDirectory(finalFolder);
+
+        foreach (var relPath in _newFiles)
+        {
+            var fileName = Path.GetFileName(relPath.RelativePath);
+            var stagingPath = Path.Combine(StagingFolder, fileName);
+            var finalPath = Path.Combine(finalFolder, fileName);
+            if (File.Exists(stagingPath))
+                File.Move(stagingPath, finalPath, overwrite: true);
+        }
+
+        _newFiles.Clear();
+        _largeFiles.Clear();
+    }
+
+    private async Task OnFilesSelected(IReadOnlyList<IBrowserFile> selectedFiles)
+    {
+        try
+        {
+            _largeFiles.Clear();
+
+            if (selectedFiles is null || !selectedFiles.Any())
+            {
+                Snackbar.Add("No files selected.", Severity.Warning);
+                return;
+            }
+
+            if (selectedFiles.Count > MaxFileCount)
+            {
+                Snackbar.Add($"You can upload a maximum of {MaxFileCount} files at a time.", Severity.Warning);
+                return;
+            }
+
+            if (!Directory.Exists(StagingFolder)) Directory.CreateDirectory(StagingFolder);
+
+            foreach (var file in selectedFiles)
+            {
+                try
+                {
+                    if (file is null) continue;
+
+                    var ext = Path.GetExtension(file.Name)?.ToLowerInvariant();
+
+                    if (string.IsNullOrWhiteSpace(ext))
+                    {
+                        _largeFiles.Add(file.Name);
+                        continue;
+                    }
+
+                    byte[] bytes;
+
+                    if (ext is ".jpg" or ".jpeg" or ".png")
+                    {
+                        await using var stream = file.OpenReadStream(MaxFileSize);
+                        using var image = await Image.LoadAsync(stream);
+
+                        if (image.Width > ImageMaxWidth)
+                        {
+                            double scale = (double)ImageMaxWidth / image.Width;
+                            int newHeight = (int)(image.Height * scale);
+                            image.Mutate(x => x.Resize(ImageMaxWidth, newHeight));
+                        }
+
+                        await using var outputStream = new MemoryStream();
+
+                        IImageEncoder encoder = ext switch
+                        {
+                            ".jpg" or ".jpeg" => new JpegEncoder { Quality = JpegQuality },
+                            ".png" => new PngEncoder { CompressionLevel = PngCompressionLevel.Level6 },
+                            _ => new JpegEncoder { Quality = JpegQuality }
+                        };
+
+                        await image.SaveAsync(outputStream, encoder);
+
+                        if (outputStream.Length > MaxFileSize)
+                        {
+                            _largeFiles.Add(file.Name);
+                            continue;
+                        }
+
+                        bytes = outputStream.ToArray();
+                    }
+                    else
+                    {
+                        if (file.Size > MaxFileSize)
+                        {
+                            _largeFiles.Add(file.Name);
+                            continue;
+                        }
+
+                        await using var stream = file.OpenReadStream(MaxFileSize);
+                        await using var ms = new MemoryStream();
+                        await stream.CopyToAsync(ms);
+                        bytes = ms.ToArray();
+                    }
+
+                    // ── Persist immediately, same as your ProcessFileUploadsAsync ──
+                    var fileName = $"{Guid.NewGuid()}{ext}";
+
+                    var stagingPath = Path.Combine(StagingFolder, fileName);
+                    await File.WriteAllBytesAsync(stagingPath, bytes);
+
+                    var relativePath = $"{RelPath.TrimEnd('/')}/{fileName}";
+                    var dbPath = $"/{UploadFolder.TrimEnd('/')}/{fileName}";
+
+                    _newFiles.Add(new UploadedFile(relativePath, FormatSize(bytes.LongLength), dbPath));
+                    // _newFiles.Add(relativePath);
+                }
+                catch (IOException ioEx) { Snackbar.Add($"File error '{file?.Name}': {ioEx.Message}", Severity.Error); }
+                catch (UnknownImageFormatException) { Snackbar.Add($"Unsupported image format: {file?.Name}", Severity.Warning); }
+                catch (Exception ex) { Snackbar.Add($"Error processing '{file?.Name}': {ex.Message}", Severity.Error); }
+            }
+
+            if (_largeFiles.Any())
+                Snackbar.Add($"Files over {MaxFileSize / 1024 / 1024} MB skipped: {string.Join(", ", _largeFiles)}", Severity.Warning);
+
+            await ExistingAttachmentPathChanged.InvokeAsync(CombinedPath);
+            _touched = true;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Unexpected upload error: {ex.Message}", Severity.Error);
+        }
+    }
+    private string FormatSize(long bytes)
+    {
+        if (bytes < 1024)
+        {
+            return $"{bytes} B";
+        }
+        else if (bytes < 1024 * 1024)
+        {
+            return $"{bytes / 1024.0:F1} KB";
+        }
+        else
+        {
+            return $"{bytes / 1024.0 / 1024.0:F1} MB";
+        }
+    }
+
+    private async Task RemoveNewFile(string relPath)
+    {
+        DeletePhysicalFile(relPath);
+        var match = _newFiles.FirstOrDefault(f => f.RelativePath == relPath);
+        if (match is not null)
+            _newFiles.Remove(match);
+
+        await ExistingAttachmentPathChanged.InvokeAsync(CombinedPath);
+        Snackbar.Add($"{Path.GetFileName(relPath)} removed.", Severity.Success);
+        _touched = true;
+        StateHasChanged();
+    }
+
+    private void DeletePhysicalFile(string relPath)
+    {
+        try
+        {
+            var fileName = Path.GetFileName(relPath.Trim());
+            //var physicalPath = Path.Combine(Env.WebRootPath, UploadFolder.Replace('/','\\'), fileName);
+
+            var physicalPath = Path.Combine(Env.WebRootPath, StagingFolder.Replace('/', '\\'), fileName);
+
+            if (File.Exists(physicalPath))
+                File.Delete(physicalPath);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to delete '{relPath}': {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void OpenInNewTab(string url) => JS.InvokeVoidAsync("open", url, "_blank");
+}

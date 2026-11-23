@@ -1,0 +1,64 @@
+﻿<MudDialog>
+    <DialogContent>
+        <!-- PRINT AREA -->
+        <div id="print-area">
+
+            <MudPaper Elevation="0" Class="pa-2 print-paper">
+                <!-- HEADER -->
+                <MudStack Spacing="1" AlignItems="AlignItems.Center">
+                    <MudImage Src="resources/vishal-mega-mart-logo.png" Alt="Vishal Mega Mart Logo" style="width:20%" />
+                    <MudText Typo="Typo.h5" Bold="true">Acceptable Quality Level(AQL)</MudText>
+                </MudStack>
+                <MudDivider Class="my-3" />
+
+                <!-- CONFORMITY TABLE -->
+                <MudTable T="AQLDataResponse" Items="@AqlList" Dense="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>Lot or Batch Size</MudTh>
+                        <MudTh>Sample Size(Level-II)</MudTh>
+                        <MudTh>Major</MudTh>
+                        <MudTh>Minor</MudTh>
+                    </HeaderContent>
+                    <RowTemplate Context="row">
+                        @if (@row.AQL_2_5_MAJOR == 0 || @row.AQL_2_5_MINOR == 0)
+                        {
+                            <MudTd Class="text-center">@row.BATCH_SIZE_MIN - @row.BATCH_SIZE_MAX</MudTd>
+                            <MudTd Class="text-center">@row.SAMPLE_SIZE </MudTd>
+                            <MudTd Class="text-center">@row.AQL_2_5_MAJOR</MudTd>
+                            <MudTd Class="text-center">@row.AQL_2_5_MINOR</MudTd>
+
+                        }
+                        else
+                        {
+                            <MudTd Class="text-center"><b>@row.BATCH_SIZE_MIN - @row.BATCH_SIZE_MAX</b></MudTd>
+                            <MudTd Class="text-center"><b>@row.SAMPLE_SIZE </b></MudTd>
+                            <MudTd Class="text-center"><b>@row.AQL_2_5_MAJOR</b></MudTd>
+                            <MudTd Class="text-center"><b>@row.AQL_2_5_MINOR</b></MudTd>
+                        }
+
+                    </RowTemplate>
+                </MudTable>
+
+                <MudDivider Class="my-3" />
+                <!-- QUANTITY & PACKING -->
+            </MudPaper>
+        </div>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Color="Color.Primary" OnClick="Close">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+    [Parameter] public List<AQLDataResponse> AqlList { get; set; } = new();
+    void Close() => MudDialog?.Close();
+
+}
+<style>
+    .text-center {
+        text-align: center;
+    }
+</style>

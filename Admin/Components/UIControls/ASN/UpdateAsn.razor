@@ -1,0 +1,393 @@
+﻿@using Admin.Components.Shared
+@using Admin.Services
+@using Application.DTOs.Asn
+@using System.Security.Claims
+@using Application.Interfaces.V1.Notifications
+@using Application.Interfaces.V1.User
+@using Application.Notifications
+@using Application.Services.Asn
+@using Domain.Enums
+@using Newtonsoft.Json
+@inject INotifier<AsnGeneratedModel> AsnNotifier
+<MudDialog>
+    <DialogContent>
+        <MudPaper Elevation="0" Class="pa-0">
+            <MudPaper Class="pa-4 mb-6 d-flex align-center" Style="background-color:darkblue; color:white; border-radius:8px 8px 0 0;" Elevation="0">
+                <MudIcon Icon="@Icons.Material.Filled.LocalShipping" Color="Color.Surface" Class="mr-2" Size="Size.Small" />
+                <MudText Color="Color.Surface" Typo="Typo.subtitle2">
+                    QPS Portal
+                    <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" Class="mx-1 mb-1" />
+                    ASN Request
+                    <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" Class="mx-1 mb-1" />
+                    <b>Update ASN</b>
+                </MudText>
+            </MudPaper>
+            <MudForm @ref="_form" Model="_model" Class="px-4 pb-4">
+                <MudPaper Outlined="true" Class="pa-4 mb-6" Style="background-color:#f7f8fa; border-radius:8px;">
+                    <MudText Typo="Typo.overline" Class="mb-2" Style="color:#6b7280; letter-spacing:0.5px;">
+                        ASN Request Details
+                    </MudText>
+
+                    <MudGrid>
+                        <MudItem xs="12" sm="4">
+                            <MudText Typo="Typo.caption" Style="color:#6b7280;">PO Number</MudText>
+                            <MudText Typo="Typo.subtitle1" Style="font-weight:600;">
+                                <MudChip T="string" OnClick="ConfirmDownload" Variant="Variant.Outlined" Color="Color.Warning"> @_model.PoNumberwithLinkPo </MudChip>
+                            </MudText>
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudText Typo="Typo.caption" Style="color:#6b7280;">Inspection Number</MudText>
+                            <MudText Typo="Typo.subtitle1" Style="font-weight:600;">
+                                <MudChip T="string" OnClick="() => ViewReport(_model.InspectId)" Variant="Variant.Outlined" Color="Color.Secondary"> @_model.InspectionNo  </MudChip>
+                            </MudText>
+                        </MudItem>
+
+                        <MudItem xs="6" sm="2">
+                            <MudText Typo="Typo.caption" Style="color:#6b7280;">Ship Qty</MudText>
+                            <MudButton Color="Color.Primary" Variant="Variant.Outlined">
+                                @_model.ShipQty.ToString("N0")
+                            </MudButton>
+                        </MudItem>
+                        <MudItem xs="6" sm="2">
+                            <MudText Typo="Typo.caption" Style="color:#6b7280;">Req.ASN Qty</MudText>
+                            <MudButton Color="Color.Success" Variant="Variant.Outlined">
+                                @_model.AsnQuantity?.ToString("N0")
+                            </MudButton>
+                        </MudItem>
+                        <MudItem xs="12" sm="12">
+                            <MudText Typo="Typo.caption" Style="color:#6b7280;">Remark</MudText>
+                            <MudText Typo="Typo.subtitle1" Style="font-weight:200;">@_model.Remarks</MudText>
+                        </MudItem>
+                    </MudGrid>
+                </MudPaper>
+
+                <MudGrid>
+                    <MudItem xs="12" sm="12">
+                        <MudSelect T="string"
+                                   Label="ASN Number"
+                                   @bind-Value="_model.ASNNumber"
+                                   Variant="Variant.Outlined"
+                                   Placeholder="Select ASN Number..."
+                                   Loading="_loadingAsnList">
+                            @if (_availableAsnNumbers.Any())
+                            {
+                                @foreach (var asn in _availableAsnNumbers)
+                                {
+                                    <MudSelectItem Value="@asn">@asn</MudSelectItem>
+                                }
+                            }
+                            else if (!_loadingAsnList)
+                            {
+                                <MudSelectItem Value="@string.Empty" Disabled="true">No ASN numbers available</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="12">
+                        <AttachmentUploader @ref="_testReportUploader"
+                                            UploadFolder="uploads/asn"
+                                            RelPath="/uploads/asn/_staging"
+                                            ExistingAttachmentPath="@_model.ASNAttachmentPath"
+                                            ExistingAttachmentPathChanged="path => _model.ASNAttachmentPath = path"
+                                            Required="true"
+                                            RequiredErrorText="ASN Attachment is required."
+                                            Disabled="false" />
+                    </MudItem>
+                </MudGrid>
+
+
+                <MudDivider Class="my-4" />
+
+
+            </MudForm>
+        </MudPaper>
+    </DialogContent>
+
+    <DialogActions>
+        <div class="d-flex justify-end gap-3">
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Default"
+                       OnClick="Cancel"
+                       Disabled="_isSubmitting">
+                Cancel
+            </MudButton>
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       OnClick="SubmitRequest"
+                       Disabled="_isSubmitting"
+                       StartIcon="@(_isSubmitting ? null : Icons.Material.Filled.Send)">
+                @if (_isSubmitting)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <span>Submitting...</span>
+                }
+                else
+                {
+                    <span>Submit ASN</span>
+                }
+            </MudButton>
+
+
+        </div>
+    </DialogActions>
+</MudDialog>
+<Loader IsVisible="@IsLoading" />
+
+@code {
+    @inject IDialogService DialogService
+    [Inject] protected GetAsnListResolver _LauncherFactory { get; set; } = default!;
+    [Inject] protected PODownloadService _PODownloadService { get; set; } = default!;
+    [Inject] protected ICurrentUserService CurrentUser { get; set; } = default!;
+    private MudForm _form = default!;
+    private AttachmentUploader _testReportUploader = default!;
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+
+    [Parameter]
+    public AsnRequestModel _model { get; set; } = new();
+
+    private List<string> _availableAsnNumbers = new();
+    private bool _loadingAsnList;
+
+    private bool _isSubmitting;
+    bool IsLoading = false;
+
+
+
+    private string? ValidateAsnQuantity(decimal? value)
+    {
+        if (value is null)
+            return "ASN Quantity is required";
+
+        if (value <= 0)
+            return "ASN Quantity must be greater than zero";
+
+        if (value > _model.TotalBalanceQty)
+            return $"Cannot exceed balance Qty ({_model.TotalBalanceQty:N0})";
+
+        return null;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAvailableAsnNumbersAsync();
+    }
+
+    private async Task LoadAvailableAsnNumbersAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_model.PoNumber))
+        {
+            _availableAsnNumbers.Clear();
+            return;
+        }
+
+        _loadingAsnList = true;
+        StateHasChanged();
+
+        try
+        {
+            List<string> sapAsnList = new List<string>();
+            var POnumbers = _model.PoNumberwithLinkPo.Split('~').ToList();
+            foreach (var po in POnumbers)
+            {
+                // ── Fetch SAP ASN list for this PO ──
+                var listofAsn = await GetAsnNumbersAsync(po.Trim(), InstanceOrigin.Sap);
+                if (listofAsn is not null)
+                    sapAsnList.AddRange(listofAsn);
+            }
+
+            // ── Fetch Local ASN list already used for this PO ──
+            var localAsnList = await GetAsnNumbersAsync(_model.PoNumber, InstanceOrigin.Local);
+            // ── Show only SAP ASN numbers NOT already present locally ──
+            _availableAsnNumbers = sapAsnList
+                .Except(localAsnList, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            // If the currently selected value is no longer valid, clear it
+            if (!string.IsNullOrEmpty(_model.ASNNumber) &&
+                !_availableAsnNumbers.Contains(_model.ASNNumber, StringComparer.OrdinalIgnoreCase))
+            {
+                _model.ASNNumber = string.Empty;
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load ASN numbers: {ex.Message}", Severity.Error);
+            _availableAsnNumbers.Clear();
+        }
+        finally
+        {
+            _loadingAsnList = false;
+            StateHasChanged();
+        }
+    }
+    private async Task<List<string>> GetAsnNumbersAsync(string poNumber, InstanceOrigin instance)
+    {
+        var launcher = _LauncherFactory.Resolve(instance);
+        var response = await launcher.TryGetAsync(poNumber);
+        if (response.Found && response.ASN_DETAILS is not null)
+        {
+            return response.ASN_DETAILS.Select(x => x.Asn).ToList();
+        }
+
+        return new List<string>();
+    }
+
+    // Replace the previous Dapper-direct call with an HTTP call to QPSAPI
+    private async Task SubmitRequest()
+    {
+        bool? dres = await DialogService.ShowMessageBox("Confirmation", $"Do you want to update ASN number for {_model.AsnQuantity} pcs?", yesText: "  Yes!  ", cancelText: "   No   ");
+        if (dres == null)
+        {
+            return;
+        }
+        else
+        {
+            if (!_testReportUploader.IsValid)
+            {
+                Snackbar.Add("ASN Attachment is required.", Severity.Error);
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(_model.ASNNumber))
+            {
+                Snackbar.Add("ASN Number is required.", Severity.Error);
+                return;
+            }
+            await _form.Validate();
+            if (!_form.IsValid) return;
+            bool saveSucceeded = false;
+            _isSubmitting = true;
+            try
+            {
+                var dto = new CompleteAsnRequestDto
+                {
+                    AsnReqId = _model.AsnId,              // needs to exist on POHeader / be passed into the dialog
+                    AsnNumber = _model.ASNNumber,
+                    AsnAttachment = _testReportUploader.GetFilesPath(),
+                    UpdatedBy = CurrentUser.UserId
+                };
+                var res = await ApiMasterService.CallingAPI<GenRes, CompleteAsnRequestDto>(AllApiNames.UPDATE_ASN_NUMBER!, dto);
+                if (res.responseCode.Equals(0) && res.responseMessage!.ToUpper() == "SUCCESS")
+                {
+                    saveSucceeded = true;
+                    Snackbar.Add("ASN request submitted", Severity.Success);
+                    MudDialog?.Close(DialogResult.Ok(true));
+
+                }
+                else
+                {
+                    Snackbar.Add($"Failed to submit: {res.responseMessage}", Severity.Error, config =>
+                        {
+                            config.VisibleStateDuration = 10000; // milliseconds (10 seconds)
+                            config.ShowTransitionDuration = 500;
+                            config.HideTransitionDuration = 500;
+                        });
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Failed to submit: {ex.Message}", Severity.Error, config =>
+                        {
+                            config.VisibleStateDuration = 10000; // milliseconds (10 seconds)
+                            config.ShowTransitionDuration = 500;
+                            config.HideTransitionDuration = 500;
+                        });
+            }
+
+            finally
+            {
+                // ─── Guaranteed cleanup: runs whether save succeeded, failed with a response,
+                // threw an exception, or even if MudDialog?.Close() above throws ───
+                if (saveSucceeded)
+                {
+                    _testReportUploader?.CommitNewFiles();
+                    await AsnNotifier.NotifyAsync(new AsnGeneratedModel(new AsnGeneratedNotificationDto()
+                    {
+                        AsnGenerationDate = DateTime.Now,
+                        AsnNumber = _model.ASNNumber,
+                        Buyer = _model.Buyer,
+                        BuyerCode = _model.BuyerCode,
+                        InspectionNumber = _model.InspectionNo,
+                        PoNumber = _model.PoNumberwithLinkPo,
+                        Quantity = _model.AsnQuantity ?? 0,
+                        VendorCode = _model.VendorCode,
+                        VendorName = _model.VendorName
+                    }));
+                }
+                else
+                {
+                    await _testReportUploader.RollbackNewFilesAsync();
+                }
+                _isSubmitting = false;
+                StateHasChanged();
+            }
+
+        }
+    }
+
+    private async Task ViewReport(int INSPECT_ID)
+    {
+        if (INSPECT_ID > 0)
+        {
+            var parameters = new DialogParameters
+            {
+                ["InspectId"] = INSPECT_ID,
+                ["IsPreview"] = false
+            };
+            await DialogService.ShowAsync<InspectionReportView>("Final Inspection Report", parameters, new DialogOptions { MaxWidth = MaxWidth.ExtraLarge, FullWidth = true });
+
+        }
+    }
+
+    private async Task ConfirmDownload()
+    {
+        bool? dres = await DialogService.ShowMessageBox("Confirmation", $"Do you want to download the PO [ {_model.PoNumberwithLinkPo} ]?", yesText: "  Yes!  ", cancelText: "   No   ");
+        if (dres == null)
+        {
+            return;
+        }
+        else
+        {
+            await DownloadPoAsync();
+        }
+    }
+
+    protected async Task DownloadPoAsync()
+    {
+        var POnumbers = _model.PoNumberwithLinkPo.Split('~').ToList();
+        foreach (var po in POnumbers)
+        {
+            IsLoading = true;
+            try
+            {
+                var (bytes, filename) = await _PODownloadService.TryGetPOPdfAsync(po.Trim());//"5900998021"
+                string base64 = Convert.ToBase64String(bytes);
+                await JS.InvokeVoidAsync("openPOPdfInNewTab", base64, filename);
+
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"{ex.Message}", Severity.Error, config =>
+                {
+                    config.VisibleStateDuration = 10000; // milliseconds (10 seconds)
+                    config.ShowTransitionDuration = 500;
+                    config.HideTransitionDuration = 500;
+                });
+            }
+            finally
+            {
+                IsLoading = false;
+            }
+        }
+    }
+
+
+    private async void Cancel()
+    {
+        await _testReportUploader.RollbackNewFilesAsync();
+        MudDialog?.Cancel();
+    }
+
+
+}
+

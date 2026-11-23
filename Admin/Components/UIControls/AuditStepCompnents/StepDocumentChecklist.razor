@@ -1,0 +1,464 @@
+﻿@using Application.DTOs
+@using SixLabors.ImageSharp
+@using SixLabors.ImageSharp.Formats
+@using SixLabors.ImageSharp.Formats.Jpeg
+@using SixLabors.ImageSharp.Formats.Png
+@using SixLabors.ImageSharp.Processing
+@inject IWebHostEnvironment Env
+<div class="doc-legend">
+    <span class="yn-badge yes">Y = Available</span>
+    <span class="yn-badge no">N = Not Available</span>
+    <span class="yn-badge na">– = Not Checked</span>
+</div>
+
+<div class="doc-table-wrap">
+    <table class="audit-tbl">
+        <thead>
+            <tr>
+                <th style="width:40px">Sr.</th>
+                <th>Document</th>
+                <th style="width:90px">Available?</th>
+                <th style="width:140px">Validity Date</th>
+                <th style="width:120px">Unit Info</th>
+                <th>Attachments [size upto 10MB]</th>
+                <th>Remarks</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var (doc, item) in Docs.Zip(DocItems, (d, i) => (d, i)))
+            {
+                <tr class="@(item.IsMandatory ? "mandatory-row" : "")">
+                    <td class="center">@item.SrNo</td>
+                    <td>
+                        @item.DocumentName
+                        @if (item.IsMandatory)
+                        {
+                            <span class="badge-req">Required</span>
+                        }
+                    </td>
+                    <td>
+                        <div class="yn-row">
+                            <button type="button" disabled="@CanSave" class="yn @(doc.IsAvailable == "Y" ? "yn-yes" : "")" @onclick="() => Toggle(doc, 'Y')">
+                                Y
+                            </button>
+                            <button type="button" disabled="@CanSave" class="yn @(doc.IsAvailable == "N" ? "yn-no" : "")" @onclick="() => Toggle(doc, 'N')">
+                                N
+                            </button>
+                        </div>
+                    </td>
+                    <td>
+                        <input type="date" class="fc-sm" disabled="@CanSave"
+                               value="@doc.ValidityDate?.ToString("yyyy-MM-dd")"
+                               @onchange="e => doc.ValidityDate = ParseDate(e.Value?.ToString())" />
+                    </td>
+                    <td><input class="fc-sm" @bind="doc.UnitInfo" disabled="@CanSave" placeholder="Unit 1/Additional" /></td>
+
+                    <td>
+                        <MudItem xs="12" md="12">
+                            <MudStack Row="true">
+                                @if (!string.IsNullOrEmpty(doc.Attachments))
+                                {
+                                    <div class="attach-preview">
+                                        @foreach (var path in doc.Attachments.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                                        {
+                                            if (path.Contains("."))
+                                            {
+                                                <MudChip T="string" @onclick="@(() => OpenInNewTab(path))" Variant="Variant.Outlined" Color="MudBlazor.Color.Success">View📎</MudChip>
+                                            }
+                                        }
+
+                                    </div>
+                                }
+                            </MudStack>
+                        </MudItem>
+                        @*  <input class="fc-sm" @bind="doc.Attachments" disabled="@CanSave" placeholder="File path/URL" /> *@
+                        <MudItem xs="12" md="12">
+                            <MudStack Row="true">
+                                <MudFileUpload T="IReadOnlyList<IBrowserFile>"
+                                               Accept=".png, .jpg, .pdf, .docx"
+                                               FilesChanged="selectedFiles => UploadFiles(doc, selectedFiles)"
+                                               MaximumFileCount="10"
+                                               MaxFileSize="@(10 * 1024 * 1024)"
+                                               Disabled=CanSave>
+                                    <ActivatorContent>
+                                        <MudButton Variant="Variant.Filled"
+                                                   Color="MudBlazor.Color.Primary"
+                                                   StartIcon="@Icons.Material.Filled.CloudUpload">
+                                            Upload image / pdf
+                                        </MudButton>
+                                    </ActivatorContent>
+                                    <SelectedTemplate>
+                                        @{
+                                            var cardFiles = GetFiles(doc);
+                                        }
+                                        @if (cardFiles.Any())
+                                        {
+                                            <MudList T="string">
+                                                @foreach (var file in cardFiles)
+                                                {
+                                                    <MudListItem Icon="@Icons.Material.Filled.AttachFile">
+                                                        @file.Name <code>@(file.Size / 1024) KB</code>
+                                                        <MudButton Variant="Variant.Outlined"
+                                                                   OnClick="@(() => Remove(doc, file))">
+                                                            remove
+                                                        </MudButton>
+                                                        <MudButton Variant="Variant.Outlined"
+                                                                   Color="MudBlazor.Color.Secondary"
+                                                                   OnClick="@(() => OpenFile(file))">
+                                                            Preview
+                                                        </MudButton>
+                                                    </MudListItem>
+                                                }
+                                            </MudList>
+                                        }
+                                    </SelectedTemplate>
+                                </MudFileUpload>
+                            </MudStack>
+
+                            <MudStack Row="true">
+                                @{
+                                    var largFiles = GetLargeFiles(doc);
+                                }
+                                @if (largFiles.Count > 0)
+                                {
+                                    <div style="display:flex;flex-wrap:wrap;gap:10px;">
+                                        <MudText>Sorry, the following file(s) are too large. Please choose files smaller than 10 MB.</MudText>
+                                        @foreach (var path in largFiles)
+                                        {
+                                            <code>@path<br /></code>
+                                        }
+                                    </div>
+                                }
+                            </MudStack>
+                        </MudItem>
+                    </td>
+
+                    <td><input class="fc-sm" @bind="doc.Remarks" disabled="@CanSave" placeholder="Remarks" /></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+<div class="step-actions">
+    <button class="btn-secondary" @onclick="() => OnBack.InvokeAsync()">← Back</button>
+    <button class="btn-primary" @onclick="Save">Save &amp; Next →</button>
+</div>
+
+@code {
+    [Parameter] public bool CanSave { get; set; }
+    [Parameter] public WizardStateDto AuditState { get; set; } = default!;
+    [Parameter] public List<DocumentItemResponse> DocItems { get; set; } = new();
+    [Parameter] public EventCallback<List<DocumentResponseRequest>> OnSave { get; set; }
+    [Parameter] public EventCallback OnBack { get; set; }
+
+    private List<DocumentResponseRequest> Docs => AuditState.Step3Docs;
+
+    private void Toggle(DocumentResponseRequest doc, char val) => doc.IsAvailable = doc.IsAvailable == val.ToString() ? null : val.ToString();
+
+    private static DateTime? ParseDate(string? v) => DateTime.TryParse(v, out var d) ? d : null;
+
+    // ── Per-card state ──────────────────────────────────────────────────────────
+    private Dictionary<DocumentResponseRequest, List<IBrowserFile>> _filesByAtt = new();
+    private Dictionary<DocumentResponseRequest, List<string>> _largeSizeByAtt = new();
+
+    private List<IBrowserFile> GetFiles(DocumentResponseRequest att) =>
+        _filesByAtt.TryGetValue(att, out var list) ? list : (_filesByAtt[att] = new());
+
+    private List<string> GetLargeFiles(DocumentResponseRequest att) =>
+        _largeSizeByAtt.TryGetValue(att, out var list) ? list : (_largeSizeByAtt[att] = new());
+    // ── Save: persist files to disk, set paths, then notify parent ─────────────
+    private async Task Save()
+    {
+        // ── Validate FIRST before any disk operation ───────────────────────
+        if (CanSave != false)
+        {
+            Snackbar.Add("Cannot save attachments: Audit is already submitted.", Severity.Warning);
+            return;
+        }
+        // Save any pending in-memory files to disk and stamp AttachmentPath
+        foreach (var att in AuditState.Step3Docs)
+        {
+            var cardFiles = GetFiles(att);
+            if (!cardFiles.Any()) continue; // ← no new uploads, keep existing DB path as-is
+
+            // ── Delete old files from disk before saving new ones ──────────────
+            if (!string.IsNullOrEmpty(att.Attachments))
+            {
+                DeleteFilesFromDisk(att.Attachments);
+                att.Attachments = string.Empty; // clear old paths
+            }
+
+            var savedPaths = new List<string>();
+
+            // Preserve existing paths if any
+            if (!string.IsNullOrEmpty(att.Attachments))
+            {
+                savedPaths.AddRange(
+                    att.Attachments.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                );
+            }
+            // Add newly uploaded files
+            foreach (var file in cardFiles)
+            {
+                var savedPath = await PersistFileToDisk(file);
+                if (!string.IsNullOrEmpty(savedPath))
+                    savedPaths.Add(savedPath);
+            }
+
+            if (savedPaths.Any())
+                att.Attachments = string.Join(",", savedPaths);
+
+        }
+
+        await OnSave.InvokeAsync(Docs);
+
+    }
+    // ── Delete all comma-separated files from disk ─────────────────────────────
+    private void DeleteFilesFromDisk(string commaSeparatedPaths)
+    {
+        try
+        {
+            var paths = commaSeparatedPaths.Split(',', StringSplitOptions.RemoveEmptyEntries);
+
+            foreach (var relativePath in paths)
+            {
+                try
+                {
+                    // Convert relative URL /Audit/filename.jpg → physical path
+                    var fileName = Path.GetFileName(relativePath.Trim());
+                    var physicalPath = Path.Combine(Env.WebRootPath, "Audit", fileName);
+
+                    if (File.Exists(physicalPath))
+                    {
+                        File.Delete(physicalPath);
+                    }
+                    else
+                    {
+                        Snackbar.Add($"File not found on disk, skipping: {fileName}", Severity.Warning);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Snackbar.Add($"Failed to delete '{relativePath}': {ex.Message}", Severity.Error);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error during file deletion: {ex.Message}", Severity.Error);
+        }
+    }
+    // ── Persist a single IBrowserFile to wwwroot/Audit, return relative URL ────
+    private async Task<string> PersistFileToDisk(IBrowserFile file)
+    {
+        try
+        {
+            const long maxFileSize = 10 * 1024 * 1024;
+            var uploadsFolder = Path.Combine(Env.WebRootPath, "Audit");
+
+            if (!Directory.Exists(uploadsFolder))
+                Directory.CreateDirectory(uploadsFolder);
+
+            var ext = Path.GetExtension(file.Name).ToLowerInvariant();
+            var uniqueFileName = $"{Guid.NewGuid()}{ext}";
+            var filePath = Path.Combine(uploadsFolder, uniqueFileName);
+
+            await using var stream = file.OpenReadStream(maxFileSize);
+            await using var fs = new FileStream(filePath, FileMode.Create);
+            await stream.CopyToAsync(fs);
+
+            return $"/Audit/{uniqueFileName}";
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to save '{file.Name}': {ex.Message}", Severity.Error);
+            return string.Empty;
+        }
+    }
+
+    // ── Upload: compress images, validate size, keep in memory per card ─────────
+    private async Task UploadFiles(DocumentResponseRequest att, IReadOnlyList<IBrowserFile> selectedFiles)
+    {
+        try
+        {
+            var files = GetFiles(att);
+            var largSizeFiles = GetLargeFiles(att);
+            largSizeFiles.Clear();
+
+            const int maxFileCount = 10;
+            const long maxFileSize = 10 * 1024 * 1024;
+
+            if (selectedFiles == null || !selectedFiles.Any())
+            {
+                Snackbar.Add("No files selected.", Severity.Warning);
+                return;
+            }
+
+            if (selectedFiles.Count > maxFileCount)
+            {
+                Snackbar.Add($"You can upload a maximum of {maxFileCount} files at a time.", Severity.Warning);
+                return;
+            }
+
+            foreach (var file in selectedFiles)
+            {
+                try
+                {
+                    if (file == null) continue;
+
+                    var ext = Path.GetExtension(file.Name)?.ToLowerInvariant();
+
+                    if (string.IsNullOrWhiteSpace(ext))
+                    {
+                        largSizeFiles.Add(file.Name);
+                        continue;
+                    }
+
+                    if (ext is ".jpg" or ".jpeg" or ".png")
+                    {
+                        await using var stream = file.OpenReadStream(maxFileSize);
+                        using var image = await Image.LoadAsync(stream);
+
+                        if (image.Width > 1024)
+                        {
+                            double scale = 1024.0 / image.Width;
+                            int newHeight = (int)(image.Height * scale);
+                            image.Mutate(x => x.Resize(1024, newHeight));
+                        }
+
+                        await using var outputStream = new MemoryStream();
+
+                        IImageEncoder encoder = ext switch
+                        {
+                            ".jpg" or ".jpeg" => new JpegEncoder { Quality = 80 },
+                            ".png" => new PngEncoder { CompressionLevel = PngCompressionLevel.Level6 },
+                            _ => new JpegEncoder { Quality = 80 }
+                        };
+
+                        await image.SaveAsync(outputStream, encoder);
+
+                        if (outputStream.Length > maxFileSize)
+                        {
+                            largSizeFiles.Add(file.Name);
+                            continue;
+                        }
+
+                        outputStream.Position = 0;
+                        files.Add(new InMemoryBrowserFile(outputStream.ToArray(), file.Name, file.ContentType));
+                    }
+                    else
+                    {
+                        if (file.Size > maxFileSize)
+                        {
+                            largSizeFiles.Add(file.Name);
+                            continue;
+                        }
+
+                        files.Add(file);
+                    }
+                }
+                catch (IOException ioEx) { Snackbar.Add($"File error '{file?.Name}': {ioEx.Message}", Severity.Error); }
+                catch (UnknownImageFormatException) { Snackbar.Add($"Unsupported image format: {file?.Name}", Severity.Warning); }
+                catch (Exception ex) { Snackbar.Add($"Error processing '{file?.Name}': {ex.Message}", Severity.Error); }
+            }
+
+            if (largSizeFiles.Any())
+                Snackbar.Add($"Files over 10 MB skipped: {string.Join(", ", largSizeFiles)}", Severity.Warning);
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Unexpected upload error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // ── Remove a file from a card ───────────────────────────────────────────────
+    private void Remove(DocumentResponseRequest att, IBrowserFile item)
+    {
+        try
+        {
+            var files = GetFiles(att);
+
+            if (files.Remove(item))
+            {
+                GetLargeFiles(att).Clear();
+                Snackbar.Add($"{item.Name} removed.", Severity.Success);
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error removing file: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // ── Preview a file in a new browser tab ────────────────────────────────────
+    private async Task OpenFile(IBrowserFile file)
+    {
+        try
+        {
+            const long maxFileSize = 10 * 1024 * 1024;
+
+            await using var stream = file.OpenReadStream(maxFileSize);
+            await using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+
+            var bytes = ms.ToArray();
+            if (bytes.Length == 0)
+            {
+                Snackbar.Add("File content is empty.", Severity.Warning);
+                return;
+            }
+
+            await JS.InvokeVoidAsync("openFileInNewTab", bytes, file.ContentType);
+        }
+        catch (IOException ioEx) { Snackbar.Add($"File read error: {ioEx.Message}", Severity.Error); }
+        catch (JSException jsEx) { Snackbar.Add($"JS error: {jsEx.Message}", Severity.Error); }
+        catch (OperationCanceledException) { Snackbar.Add("Operation cancelled.", Severity.Warning); }
+        catch (Exception ex) { Snackbar.Add($"Error opening file: {ex.Message}", Severity.Error); }
+    }
+
+    // ── InMemoryBrowserFile (unchanged) ────────────────────────────────────────
+    public class InMemoryBrowserFile : IBrowserFile
+    {
+        private readonly byte[] _fileBytes;
+
+        public InMemoryBrowserFile(byte[] fileBytes, string name, string contentType)
+        {
+            if (fileBytes == null || fileBytes.Length == 0)
+                throw new ArgumentException("File content cannot be null or empty.", nameof(fileBytes));
+            if (string.IsNullOrWhiteSpace(name))
+                throw new ArgumentException("File name cannot be null or empty.", nameof(name));
+            if (string.IsNullOrWhiteSpace(contentType))
+                throw new ArgumentException("Content type cannot be null or empty.", nameof(contentType));
+
+            _fileBytes = fileBytes;
+            Name = name;
+            Size = fileBytes.LongLength;
+            LastModified = DateTimeOffset.Now;
+            ContentType = contentType;
+        }
+
+        public DateTimeOffset LastModified { get; }
+        public string Name { get; }
+        public long Size { get; }
+        public string ContentType { get; }
+
+        public Stream OpenReadStream(long maxAllowedSize = 512000, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (_fileBytes.LongLength > maxAllowedSize)
+                throw new IOException($"File size exceeds the allowed limit of {maxAllowedSize} bytes.");
+
+            return new MemoryStream(_fileBytes, writable: false);
+        }
+    }
+
+    private void OpenInNewTab(string url)
+    {
+        JS.InvokeVoidAsync("open", url, "_blank");
+    }
+}

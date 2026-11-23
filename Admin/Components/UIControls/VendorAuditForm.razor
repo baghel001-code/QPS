@@ -1,0 +1,1067 @@
+﻿@using System.Security.Claims
+@using Admin.Components.Shared
+@using Application.DTOs
+@using Application.Interfaces.V1.User
+@using Newtonsoft.Json
+@using SixLabors.ImageSharp
+@using SixLabors.ImageSharp.Formats
+@using SixLabors.ImageSharp.Formats.Jpeg
+@using SixLabors.ImageSharp.Formats.Png
+@using SixLabors.ImageSharp.Processing
+@using System.Text.RegularExpressions
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject ILogger<VendorAuditForm> Logger
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.FactCheck" Class="mr-2" />
+            Vendor Audit Form
+        </MudText>
+    </TitleContent>
+
+    <DialogContent>
+        <MudForm @ref="_form" Model="_model" @bind-Errors="_formErrors">
+            <MudGrid>
+                @* ── Section 1: Header ─────────────────────────────── *@
+                <MudItem xs="12">
+                    <MudChip T="string" Variant="Variant.Outlined" Color="MudBlazor.Color.Secondary"><b>Audit Information</b> </MudChip>
+                    <MudGrid>
+
+                        <MudItem xs="12" md="8">
+                            <MudSelect T="int" Label="Business Head" @bind-Value="_model.BusinessHead" Required="true" Validation="@((int value) => value == 0 ? "Please select a business head" : null)">
+                                <MudSelectItem Value="0">
+                                    --Select--
+                                </MudSelectItem>
+                                @foreach (var item in _model.BusinessHeadList)
+                                {
+                                    <MudSelectItem Value="@item.Master_ID">
+                                        @( $"{item.Master_Name}")
+                                    </MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+
+                        <MudItem xs="12" md="4">
+                            <MudDatePicker Label="Audit Date"
+                                           @bind-Date="_model.AuditDate"
+                                           Required="true"
+                                           DateFormat="dd/MM/yyyy" />
+                        </MudItem>
+
+                    </MudGrid>
+                </MudItem>
+
+                @* ── Section 2: GST & Vendor Info ─────────────────── *@
+                <MudItem xs="12">
+                    <MudChip T="string" Variant="Variant.Outlined" Color="MudBlazor.Color.Secondary"><b>GST & Vendor Information</b></MudChip>
+                    <MudGrid>
+
+                        <MudItem xs="12" md="4">
+
+                            @if (IsEditMode)
+                            {
+                                <MudTextField T="string" Label="GST Number" ReadOnly="IsEditMode" @bind-Value="_model.GstNumber" Required="true" />
+                            }
+                            else
+                            {
+                                <MudTextField T="string" Label="GST Number" @bind-Value="_model.GstNumber" Required="true" RequiredError="GST Number is required"
+                                              MaxLength="15" Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search" OnAdornmentClick="LookupGst"
+                                              AdornmentAriaLabel="Lookup GST" Immediate="true" Validation="@(new Func<string, string>(ValidateGST))" />
+                            }
+                        </MudItem>
+                        <MudItem xs="12" md="8">
+                            <MudTextField T="string"
+                                          Label="Vendor Name"
+                                          @bind-Value="_model.VendorName"
+                                          Required="true"
+                                          ReadOnly="true"
+                                          RequiredError="Vendor Name is required"
+                                          MaxLength="250" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="6">
+                            <MudTextField T="string"
+                                          Label="Registered Address"
+                                          @bind-Value="_model.RegisteredAddress"
+                                          Required="true"
+                                          Lines="2"
+                                          ReadOnly="true"
+                                          RequiredError="Registered Address is required"
+                                          MaxLength="500" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="6">
+                            <MudTextField T="string"
+                                          Label="Factory Location (Full Address where audit will be done)"
+                                          @bind-Value="_model.FactoryLocation"
+                                          Required="true"
+                                          RequiredError="Factory Location is required"
+                                          Lines="2"
+                                          MaxLength="500" />
+                        </MudItem>
+
+                    </MudGrid>
+                </MudItem>
+
+                @* ── Section 3: Contact Info ───────────────────────── *@
+                <MudItem xs="12">
+                    <MudChip T="string" Variant="Variant.Outlined" Color="MudBlazor.Color.Secondary"><b>Contact Information</b> </MudChip>
+                    <MudGrid>
+
+                        <MudItem xs="12" md="6">
+                            <MudTextField T="string"
+                                          Label="Contact Name"
+                                          @bind-Value="_model.ContactName"
+                                          Required="true"
+                                          RequiredError="Contact Name is required"
+                                          MaxLength="150" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="6">
+                            <MudTextField T="string"
+                                          Label="Contact # (Mobile / Landline)"
+                                          @bind-Value="_model.ContactNumber"
+                                          Required="true"
+                                          RequiredError="Contact Number is required"
+                                          MaxLength="20"
+                                          Validation="@((string val) => string.IsNullOrEmpty(val) ? null :val.Length < 10 ? "Min 10 digits required" : null)" />
+                        </MudItem>
+
+                        @*  <MudItem xs="12" md="4">
+                            <MudTextField T="string"
+                                          Label="Requested Buyer Name"
+                                          @bind-Value="_model.RequestedBuyerName"
+                                          Required="true"
+                                          RequiredError="Buyer Name is required"
+                                          MaxLength="150" />
+                        </MudItem> *@
+
+                    </MudGrid>
+                </MudItem>
+
+                @* ── Section 4: Category & Factory ────────────────── *@
+                <MudItem xs="12">
+                    <MudChip T="string" Variant="Variant.Outlined" Color="MudBlazor.Color.Secondary"><b>Category & Product Information</b></MudChip>
+                    <MudGrid>
+
+                        <MudItem xs="12" md="6">
+                            <MudTextField T="string"
+                                          Label="Category (e.g. Kids, Babies, Men and Women)"
+                                          @bind-Value="_model.Category"
+                                          Required="true"
+                                          RequiredError="Category is required"
+                                          MaxLength="500" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="6">
+                            <MudTextField T="string"
+                                          Label="Product Category (e.g. Baby body, romper, t-shirt, pyjama set...)"
+                                          @bind-Value="_model.ProductCategory"
+                                          Required="true"
+                                          RequiredError="Product Category is required"
+                                          MaxLength="500" />
+                        </MudItem>
+                    </MudGrid>
+                </MudItem>
+
+                @* ── Section 4: Category & Factory ────────────────── *@
+                <MudItem xs="12">
+                    <MudChip T="string" Variant="Variant.Outlined" Color="MudBlazor.Color.Secondary"><b>Factory Information</b></MudChip>
+                    <MudGrid>
+
+                        <MudItem xs="12" md="4">
+                            <MudTextField T="string"
+                                          Label="Factory Licence Number"
+                                          @bind-Value="_model.FactoryLicenceNumber"
+                                          Required="true"
+                                          RequiredError="Factory Licence Number is required"
+                                          MaxLength="50" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="4">
+                            <MudTextField T="decimal"
+                                          Label="Factory Area (sq. ft.)"
+                                          @bind-Value="_model.FactoryAreaSqFt"
+                                          Required="true"
+                                          RequiredError="Factory Area is required"
+                                          Validation="@((decimal? val) =>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          val == null || val <= 0
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          ? "Value must be greater than 0"
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          : null)" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="4">
+                            <MudTextField T="int"
+                                          Label="Number of Permanent & Contracted Employees"
+                                          @bind-Value="_model.NumberOfEmployees"
+                                          Required="true"
+                                          RequiredError="Number of Employees is required"
+                                          Validation="@((int? val) =>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          val == null || val <= 0
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          ? "Value must be greater than 0"
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          : null)" />
+                        </MudItem>
+
+                    </MudGrid>
+
+                </MudItem>
+
+
+                @* ── Section 5: Checklist ──────────────────────────── *@
+                <MudItem xs="12">
+                    <MudChip T="string" Variant="Variant.Outlined" Color="MudBlazor.Color.Secondary"><b>Checklist — Documents to be Verified</b></MudChip>
+
+                    <div class="doc-table-wrap">
+                        <table class="audit-tbl">
+                            <thead>
+                                <tr>
+                                    <th>Sr. No.</th>
+                                    <th>Documents to be Verified</th>
+                                    <th>YES / NO / NA</th>
+                                    <th>Validity Date</th>
+                                    <th>Attachments [size upto 10MB]</th>
+                                    <th>Remarks</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var (doc, item) in _model.Checklist.Zip(CheckListMaster, (d, i) => (d, i)))
+                                {
+                                    <tr>
+                                        <td class="center">@item.SrNo</td>
+                                        <td>
+                                            @item.Description
+                                        </td>
+                                        <td>
+                                            <MudSelect T="int" Label="" @bind-Value="item.Status" Required="true" Validation="@((int value) => value == 0 ? $"Please select {item.Description} staus" : null)">
+                                                @foreach (var item in item.StatusList)
+                                                {
+                                                    <MudSelectItem Value="@item.Master_ID">
+                                                        @( $"{item.Master_Name}")
+                                                    </MudSelectItem>
+                                                }
+                                            </MudSelect>
+                                        </td>
+                                        <td>
+                                            <MudTextField T="string"
+                                                          @bind-Value="item.ValidityDate"
+                                                          Placeholder="DD/MM/YYYY or ONCE"
+                                                          Dense="true"
+                                                          Margin="Margin.Dense"
+                                                          MaxLength="20" />
+                                        </td>
+
+
+                                        <td>
+                                            <MudItem xs="12" md="12">
+                                                <MudStack Row="true">
+                                                    @if (!string.IsNullOrEmpty(doc.Attachments))
+                                                    {
+                                                        <div class="attach-preview">
+                                                            @foreach (var path in doc.Attachments.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                                                            {
+                                                                if (path.Contains("."))
+                                                                {
+                                                                    <MudChip T="string" @onclick="@(() => OpenInNewTab(path))" Variant="Variant.Outlined" Color="MudBlazor.Color.Success">View📎</MudChip>
+                                                                }
+                                                            }
+
+                                                        </div>
+                                                    }
+                                                </MudStack>
+                                            </MudItem>
+                                            <MudItem xs="12" md="12">
+                                                <MudStack Row="true">
+                                                    <MudFileUpload T="IReadOnlyList<IBrowserFile>"
+                                                                   Accept=".png, .jpg, .pdf, .docx"
+                                                                   FilesChanged="selectedFiles => UploadFiles(doc, selectedFiles)"
+                                                                   MaximumFileCount="10"
+                                                                   MaxFileSize="@(10 * 1024 * 1024)"
+                                                                   Disabled=CanSave>
+                                                        <ActivatorContent>
+                                                            <MudButton Variant="Variant.Filled"
+                                                                       Color="MudBlazor.Color.Primary"
+                                                                       StartIcon="@Icons.Material.Filled.CloudUpload">
+                                                                Upload image / pdf
+                                                            </MudButton>
+                                                        </ActivatorContent>
+                                                        <SelectedTemplate>
+                                                            @{
+                                                                var cardFiles = GetFiles(doc);
+                                                            }
+                                                            @if (cardFiles.Any())
+                                                            {
+                                                                <MudList T="string">
+                                                                    @foreach (var file in cardFiles)
+                                                                    {
+                                                                        <MudListItem Icon="@Icons.Material.Filled.AttachFile">
+                                                                            @file.Name <code>@(file.Size / 1024) KB</code>
+                                                                            <MudButton Variant="Variant.Outlined"
+                                                                                       OnClick="@(() => Remove(doc, file))">
+                                                                                remove
+                                                                            </MudButton>
+                                                                            <MudButton Variant="Variant.Outlined"
+                                                                                       Color="MudBlazor.Color.Secondary"
+                                                                                       OnClick="@(() => OpenFile(file))">
+                                                                                Preview
+                                                                            </MudButton>
+                                                                        </MudListItem>
+                                                                    }
+                                                                </MudList>
+                                                            }
+                                                        </SelectedTemplate>
+                                                    </MudFileUpload>
+                                                </MudStack>
+                                                <MudStack Row="true">
+                                                    @{
+                                                        var largFiles = GetLargeFiles(doc);
+                                                    }
+                                                    @if (largFiles.Count > 0)
+                                                    {
+                                                        <div style="display:flex;flex-wrap:wrap;gap:10px;">
+                                                            <MudText>Sorry, the following file(s) are too large. Please choose files smaller than 10 MB.</MudText>
+                                                            @foreach (var path in largFiles)
+                                                            {
+                                                                <code>@path<br /></code>
+                                                            }
+                                                        </div>
+                                                    }
+                                                </MudStack>
+                                            </MudItem>
+                                        </td>
+
+                                        <td>
+                                            <MudTextField T="string"
+                                                          @bind-Value="item.Remarks"
+                                                          Placeholder="Remarks"
+                                                          Dense="true"
+                                                          Margin="Margin.Dense"
+                                                          MaxLength="200" />
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </MudItem>
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Save" Color="MudBlazor.Color.Secondary" Variant="Variant.Filled" Disabled="@_isSubmitting" StartIcon="@Icons.Material.Filled.Save">Save</MudButton>
+        @* <MudButton OnClick="Submit" Color="MudBlazor.Color.Success" Variant="Variant.Filled" Disabled="@_isSubmitting" StartIcon="@Icons.Material.Filled.CheckCircle">Submit</MudButton> *@
+        <MudButton OnClick="Cancel" Color="MudBlazor.Color.Error" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Cancel">Cancel</MudButton>
+    </DialogActions>
+</MudDialog>
+<Loader IsVisible="@_gstLoading" />
+@code {
+    [Inject] protected IFetchMasterList _fetchMasterList { get; set; } = default!;
+    [Inject] protected ICurrentUserService _CurrentUser { get; set; } = default!;
+    @inject IWebHostEnvironment Env
+    //--File upload section----------------------
+    private const string UploadFolder = "wwwroot/Images/Audit";
+    private const string relPath = "/Images/Audit";
+    private const long MaxFileSize = 10 * 1024 * 1024; // 10MB
+    private List<string> largSizeFiles = new();
+    IList<IBrowserFile> files = new List<IBrowserFile>();
+    private List<string> fileNames = new();
+    // ── Per-card state ──────────────────────────────────────────────────────────
+    private Dictionary<AuditChecklistItem, List<IBrowserFile>> _filesByAtt = new();
+    private Dictionary<AuditChecklistItem, List<string>> _largeSizeByAtt = new();
+
+    private List<IBrowserFile> GetFiles(AuditChecklistItem att) =>
+        _filesByAtt.TryGetValue(att, out var list) ? list : (_filesByAtt[att] = new());
+
+    private List<string> GetLargeFiles(AuditChecklistItem att) =>
+        _largeSizeByAtt.TryGetValue(att, out var list) ? list : (_largeSizeByAtt[att] = new());
+
+    // ── Delete all comma-separated files from disk ─────────────────────────────
+    private void DeleteFilesFromDisk(string commaSeparatedPaths)
+    {
+        try
+        {
+            var paths = commaSeparatedPaths.Split(',', StringSplitOptions.RemoveEmptyEntries);
+
+            foreach (var relativePath in paths)
+            {
+                try
+                {
+                    // Convert relative URL /Audit/filename.jpg → physical path
+                    var fileName = Path.GetFileName(relativePath.Trim());
+                    var physicalPath = Path.Combine(Env.WebRootPath, "Images/Audit", fileName);
+
+                    if (File.Exists(physicalPath))
+                    {
+                        File.Delete(physicalPath);
+                    }
+                    else
+                    {
+                        Snackbar.Add($"File not found on disk, skipping: {fileName}", Severity.Warning);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Snackbar.Add($"Failed to delete '{relativePath}': {ex.Message}", Severity.Error);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error during file deletion: {ex.Message}", Severity.Error);
+        }
+    }
+    // ── Persist a single IBrowserFile to wwwroot/Audit, return relative URL ────
+    private async Task<string> PersistFileToDisk(IBrowserFile file)
+    {
+        try
+        {
+            const long maxFileSize = 10 * 1024 * 1024;
+            var uploadsFolder = Path.Combine(Env.WebRootPath, "Images/Audit");
+
+            if (!Directory.Exists(uploadsFolder))
+                Directory.CreateDirectory(uploadsFolder);
+
+            var ext = Path.GetExtension(file.Name).ToLowerInvariant();
+            var uniqueFileName = $"{Guid.NewGuid()}{ext}";
+            var filePath = Path.Combine(uploadsFolder, uniqueFileName);
+
+            await using var stream = file.OpenReadStream(maxFileSize);
+            await using var fs = new FileStream(filePath, FileMode.Create);
+            await stream.CopyToAsync(fs);
+
+            return $"{relPath}/{uniqueFileName}";
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to save '{file.Name}': {ex.Message}", Severity.Error);
+            return string.Empty;
+        }
+    }
+
+    // ── Upload: compress images, validate size, keep in memory per card ─────────
+    private async Task UploadFiles(AuditChecklistItem att, IReadOnlyList<IBrowserFile> selectedFiles)
+    {
+        try
+        {
+            var files = GetFiles(att);
+            var largSizeFiles = GetLargeFiles(att);
+            largSizeFiles.Clear();
+
+            const int maxFileCount = 10;
+            const long maxFileSize = 10 * 1024 * 1024;
+
+            if (selectedFiles == null || !selectedFiles.Any())
+            {
+                Snackbar.Add("No files selected.", Severity.Warning);
+                return;
+            }
+
+            if (selectedFiles.Count > maxFileCount)
+            {
+                Snackbar.Add($"You can upload a maximum of {maxFileCount} files at a time.", Severity.Warning);
+                return;
+            }
+
+            foreach (var file in selectedFiles)
+            {
+                try
+                {
+                    if (file == null) continue;
+
+                    var ext = Path.GetExtension(file.Name)?.ToLowerInvariant();
+
+                    if (string.IsNullOrWhiteSpace(ext))
+                    {
+                        largSizeFiles.Add(file.Name);
+                        continue;
+                    }
+
+                    if (ext is ".jpg" or ".jpeg" or ".png")
+                    {
+                        await using var stream = file.OpenReadStream(maxFileSize);
+                        using var image = await Image.LoadAsync(stream);
+
+                        if (image.Width > 1024)
+                        {
+                            double scale = 1024.0 / image.Width;
+                            int newHeight = (int)(image.Height * scale);
+                            image.Mutate(x => x.Resize(1024, newHeight));
+                        }
+
+                        await using var outputStream = new MemoryStream();
+
+                        IImageEncoder encoder = ext switch
+                        {
+                            ".jpg" or ".jpeg" => new JpegEncoder { Quality = 80 },
+                            ".png" => new PngEncoder { CompressionLevel = PngCompressionLevel.Level6 },
+                            _ => new JpegEncoder { Quality = 80 }
+                        };
+
+                        await image.SaveAsync(outputStream, encoder);
+
+                        if (outputStream.Length > maxFileSize)
+                        {
+                            largSizeFiles.Add(file.Name);
+                            continue;
+                        }
+
+                        outputStream.Position = 0;
+                        files.Add(new InMemoryBrowserFile(outputStream.ToArray(), file.Name, file.ContentType));
+                    }
+                    else
+                    {
+                        if (file.Size > maxFileSize)
+                        {
+                            largSizeFiles.Add(file.Name);
+                            continue;
+                        }
+
+                        files.Add(file);
+                    }
+                }
+                catch (IOException ioEx) { Snackbar.Add($"File error '{file?.Name}': {ioEx.Message}", Severity.Error); }
+                catch (UnknownImageFormatException) { Snackbar.Add($"Unsupported image format: {file?.Name}", Severity.Warning); }
+                catch (Exception ex) { Snackbar.Add($"Error processing '{file?.Name}': {ex.Message}", Severity.Error); }
+            }
+
+            if (largSizeFiles.Any())
+                Snackbar.Add($"Files over 10 MB skipped: {string.Join(", ", largSizeFiles)}", Severity.Warning);
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Unexpected upload error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // ── Remove a file from a card ───────────────────────────────────────────────
+    private void Remove(AuditChecklistItem att, IBrowserFile item)
+    {
+        try
+        {
+            var files = GetFiles(att);
+
+            if (files.Remove(item))
+            {
+                GetLargeFiles(att).Clear();
+                Snackbar.Add($"{item.Name} removed.", Severity.Success);
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error removing file: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // ── Preview a file in a new browser tab ────────────────────────────────────
+    private async Task OpenFile(IBrowserFile file)
+    {
+        try
+        {
+            const long maxFileSize = 10 * 1024 * 1024;
+
+            await using var stream = file.OpenReadStream(maxFileSize);
+            await using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+
+            var bytes = ms.ToArray();
+            if (bytes.Length == 0)
+            {
+                Snackbar.Add("File content is empty.", Severity.Warning);
+                return;
+            }
+
+            await JS.InvokeVoidAsync("openFileInNewTab", bytes, file.ContentType);
+        }
+        catch (IOException ioEx) { Snackbar.Add($"File read error: {ioEx.Message}", Severity.Error); }
+        catch (JSException jsEx) { Snackbar.Add($"JS error: {jsEx.Message}", Severity.Error); }
+        catch (OperationCanceledException) { Snackbar.Add("Operation cancelled.", Severity.Warning); }
+        catch (Exception ex) { Snackbar.Add($"Error opening file: {ex.Message}", Severity.Error); }
+    }
+
+    // ── InMemoryBrowserFile (unchanged) ────────────────────────────────────────
+    public class InMemoryBrowserFile : IBrowserFile
+    {
+        private readonly byte[] _fileBytes;
+
+        public InMemoryBrowserFile(byte[] fileBytes, string name, string contentType)
+        {
+            if (fileBytes == null || fileBytes.Length == 0)
+                throw new ArgumentException("File content cannot be null or empty.", nameof(fileBytes));
+            if (string.IsNullOrWhiteSpace(name))
+                throw new ArgumentException("File name cannot be null or empty.", nameof(name));
+            if (string.IsNullOrWhiteSpace(contentType))
+                throw new ArgumentException("Content type cannot be null or empty.", nameof(contentType));
+
+            _fileBytes = fileBytes;
+            Name = name;
+            Size = fileBytes.LongLength;
+            LastModified = DateTimeOffset.Now;
+            ContentType = contentType;
+        }
+
+        public DateTimeOffset LastModified { get; }
+        public string Name { get; }
+        public long Size { get; }
+        public string ContentType { get; }
+
+        public Stream OpenReadStream(long maxAllowedSize = 512000, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (_fileBytes.LongLength > maxAllowedSize)
+                throw new IOException($"File size exceeds the allowed limit of {maxAllowedSize} bytes.");
+
+            return new MemoryStream(_fileBytes, writable: false);
+        }
+    }
+
+    private void OpenInNewTab(string url)
+    {
+        JS.InvokeVoidAsync("open", url, "_blank");
+    }
+    //-----------------
+
+    bool IsLoading = false;
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+
+    [Parameter]
+    public VendorAuditFormModel? ExistingModel { get; set; }
+
+    [Parameter]
+    public bool CanSave { get; set; }
+
+
+    [Parameter] public bool IsEditMode { get; set; }
+
+    private VendorAuditFormModel _model = new();
+    private MudForm _form = new();
+    private string[] _formErrors = Array.Empty<string>();
+    private bool _isSubmitting = false;
+    private bool _gstLoading = false;
+    private bool isFatched { get; set; }
+   
+    private string gstPattern = @"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$";
+    List<AuditChecklistItem> CheckListMaster = new();
+    // ─── Lifecycle ────────────────────────────────────────────────
+    protected async override Task OnInitializedAsync()
+    {
+        try
+        {
+            //Model parameter null check
+            if (ExistingModel == null)
+            {
+                Snackbar.Add("Audit data is missing.", Severity.Error);
+                _model = new();
+                isFatched = false;
+            }
+            else
+            {
+                isFatched = IsEditMode;
+                _model = ExistingModel;
+            }
+            await GetAllMasters();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading audit form: {ex.Message}", Severity.Error);
+            MudDialog?.Close();
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task GetAllMasters()
+    {
+        try
+        {
+            var yesNoMaster = await GetMasterData(CmdNames.Get_YesNo) ?? new List<MasterData>();
+            var businessHeadMaster = await GetMasterData(CmdNames.Get_BUSINESS_HEAD) ?? new List<MasterData>();
+            var auditCheckList = await GetMasterData(CmdNames.GET_AUDTI_CHECKLIST) ?? new List<MasterData>();
+            _model.BusinessHeadList = businessHeadMaster;
+            int sno = 1;
+            foreach (var item in auditCheckList)
+            {
+                CheckListMaster.Add(new() { CheckListMasterId = item.Master_ID, SrNo = sno, Description = item.Master_Name, StatusList = yesNoMaster });
+                sno++;
+            }
+
+            if (ExistingModel != null)
+            {
+                var bLookup = ExistingModel.Checklist.ToDictionary(b => b.CheckListMasterId);
+
+                foreach (var itemA in CheckListMaster)
+                {
+                    if (bLookup.TryGetValue(itemA.CheckListMasterId, out var match))
+                    {
+                        itemA.Status = match.Status;
+                        itemA.ValidityDate = match.ValidityDate;
+                        itemA.Remarks = match.Remarks;
+                        itemA.Attachments = match.Attachments;
+                    }
+                }
+            }
+
+            _model.BusinessHeadList = businessHeadMaster;
+            _model.Checklist = CheckListMaster;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading master data: {ex.Message}", Severity.Error);
+        }
+    }
+    private async Task<List<MasterData>> GetMasterData(string cmd)
+    {
+        try
+        {
+            IsLoading = true;
+            var result = await _fetchMasterList.FetchMasterList(cmd);
+            IsLoading = false;
+
+            return result?.masterDataList ?? new List<MasterData>();
+        }
+        catch (Exception ex)
+        {
+            IsLoading = false;
+            Snackbar.Add($"Error loading {cmd} data: {ex.Message}", Severity.Error);
+            return new List<MasterData>(); // ✅ Never return null 
+        }
+    }
+    // ─── GST Lookup ───────────────────────────────────────────────
+    private async Task LookupGst()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_model.GstNumber) || _model.GstNumber.Length != 15)
+            {
+                Snackbar.Add("Please enter a valid 15-digit GST number.", Severity.Warning);
+                return;
+            }
+            if (!Regex.IsMatch(_model.GstNumber.ToUpper(), gstPattern))
+            {
+                Snackbar.Add("Please enter a valid GST number.", Severity.Warning);
+                return;
+
+            }
+
+            _gstLoading = true;
+            await InvokeAsync(StateHasChanged);
+
+            // Prepare request safely
+            var selectRequest = new SelectListReq
+            {
+                Id = 0,
+                Cmd = CmdNames.Get_GST_Details,
+                StrField = _model.GstNumber      // null-safe
+            };
+
+
+            var existingGST = await ApiMasterService.CallingAPI<GSTINLocalDBResponse, SelectListReq>(AllApiNames.GET_GST_DETAILS, selectRequest);
+
+
+            if (existingGST.responseCode == 0 && existingGST.responseMessage!.ToUpper() == "SUCCESS")
+            {
+
+                if (!string.IsNullOrEmpty(existingGST.VENDOR_NAME) && !string.IsNullOrEmpty(existingGST.REGISTERED_ADDRESS))
+                {
+
+                    await ShowErrorDialog("Info", "GST details already exist.");
+
+                    _model.VendorName = existingGST.VENDOR_NAME;
+                    _model.RegisteredAddress = existingGST.REGISTERED_ADDRESS;
+                    _model.GSTApiResponse = existingGST.GST_API_RAW_RESPONSE;
+
+                    return;
+                    //-------------------------
+                }
+            }
+
+            // ✅ Call your GST API here
+            var req = new SAP_API_DATA_Req
+            {
+                Param = _model.GstNumber,  // Ensure no null 09ABKCS6285P1Z8   03AFLPM9444GIZA
+                TaskName = "ALL_CLEAR_TAX"
+            };
+
+            //IsLoading = true;
+            var gstApiData = await ApiMasterService.CallingAPI<ApiData, SAP_API_DATA_Req>(AllApiNames.GET_SAP_API!, req).ConfigureAwait(false);
+            //IsLoading = false;
+
+            if (gstApiData is not null)
+            {
+                // IsLoading = true;
+                var GSTDetails = await ApiMasterService.CallingGSTAPI<GSTINResponse, string>(string.Empty, gstApiData).ConfigureAwait(false);
+                // IsLoading = false;
+                if (GSTDetails != null)
+                {
+                    if (GSTDetails.responseCode == 0 && GSTDetails.responseMessage?.ToUpper() == "SUCCESS")  // Safe and concise
+                    {
+                        if (!string.IsNullOrEmpty(GSTDetails.TradeName))
+                        {
+                            _model.VendorName = GSTDetails.TradeName;
+                            _model.RegisteredAddress = GSTDetails.PrincipalAddress.AddressDetail.FullAddress;
+                            _model.GSTApiResponse = JsonConvert.SerializeObject(GSTDetails, Formatting.Indented);
+
+                            await Task.Delay(500);
+                            Snackbar.Add("GST lookup completed.", Severity.Success);
+                        }
+                    }
+                    else
+                    {
+                        if (GSTDetails.responseCode == 1004)
+                        {
+                            Snackbar.Add("GST Details not found.", Severity.Warning);
+                        }
+                        else
+                        {
+                            Snackbar.Add(GSTDetails.responseMessage, Severity.Error, config =>
+                                {
+                                    config.VisibleStateDuration = 2000;
+                                });
+                        }
+                    }
+                }
+                else
+                {
+                    Snackbar.Add("GST Details not found.", Severity.Warning);
+                }
+            }
+            else
+            {
+                Snackbar.Add("GST Api not found", Severity.Error);
+                return;
+            }
+
+
+            // ── Simulate for now ──────────────────────────────────
+
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"GST lookup failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _gstLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private string ValidateGST(string gst)
+    {
+        if (string.IsNullOrWhiteSpace(gst))
+            return "GST Number is required";
+
+        return Regex.IsMatch(gst.ToUpper(), gstPattern) ? "" : "Invalid GST Number";
+    }
+
+    // ─── Save (partial save) ──────────────────────────────────────
+    private async Task Save()
+    {
+        // ── Validate FIRST before any disk operation ───────────────────────
+        if (_isSubmitting)
+        {
+            Snackbar.Add("Cannot save : Audit is already submitted.", Severity.Warning);
+            return;
+        }
+
+        bool? dres = await DialogService.ShowMessageBox("Confirmation", "Do you want to save Audit details?", yesText: "  Yes!  ", cancelText: "   No   ");
+        if (dres == null)
+        {
+            return;
+        }
+        else
+        {
+
+            await _form.Validate();
+            if (!_form.IsValid)
+            {
+                var html = "<ul style='margin:0; padding-left:16px;'>" + string.Concat(_form.Errors.Select(e => $"<li>{e}</li>")) + "</ul>";
+
+                Snackbar.Add((MarkupString)html, Severity.Error, options =>
+                {
+                    options.RequireInteraction = true;   // stays until user closes
+                });
+
+                return;
+            }
+
+            if (_form.IsValid)
+            {
+                _isSubmitting = true;
+                try
+                {
+                    // Save any pending in-memory files to disk and stamp AttachmentPath
+                    foreach (var att in _model.Checklist)
+                    {
+                        var cardFiles = GetFiles(att);
+                        if (!cardFiles.Any()) continue; // ← no new uploads, keep existing DB path as-is
+
+                        // ── Delete old files from disk before saving new ones ──────────────
+                        if (!string.IsNullOrEmpty(att.Attachments))
+                        {
+                            DeleteFilesFromDisk(att.Attachments);
+                            att.Attachments = string.Empty; // clear old paths
+                        }
+
+                        var savedPaths = new List<string>();
+
+                        // Preserve existing paths if any
+                        if (!string.IsNullOrEmpty(att.Attachments))
+                        {
+                            savedPaths.AddRange(
+                                att.Attachments.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                            );
+                        }
+                        // Add newly uploaded files
+                        foreach (var file in cardFiles)
+                        {
+                            var savedPath = await PersistFileToDisk(file);
+                            if (!string.IsNullOrEmpty(savedPath))
+                                savedPaths.Add(savedPath);
+                        }
+
+                        if (savedPaths.Any())
+                            att.Attachments = string.Join(",", savedPaths);
+
+                    }
+
+                    _model.RequestedBuyerName = _CurrentUser.UserCode;
+                    _model.UserId = _CurrentUser.UserId;
+
+                    var res = await ApiMasterService.CallingAPI<GenRes, VendorAuditFormModel>(AllApiNames.ADD_EDIT_AUDIT_REQUEST!, _model);
+                    if (res.responseCode == 0)
+                        Snackbar.Add("saved successfully.", Severity.Success);
+                    else
+                    {
+                         Snackbar.Add($"Save failed: {res.responseMessage}", Severity.Error);
+                         Logger.LogInformation(res.responseMessage);
+                    }
+                    MudDialog?.Close(DialogResult.Ok(true));
+
+                }
+                catch (Exception ex)
+                {
+                    Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
+                    Logger.LogError(ex, $"Save failed");
+                }
+                finally
+                {
+                    _isSubmitting = false;
+                }
+            }
+        }
+    }
+
+    private async Task ShowErrorDialog(string Tital, string message)
+    {
+        await DialogService.ShowMessageBox(Tital, message);
+    }
+    // ─── Submit (full validation) ─────────────────────────────────
+    private async Task Submit()
+    {
+        if (_isSubmitting) return;
+        _isSubmitting = true;
+
+        try
+        {
+            await _form.Validate();
+            if (!_form.IsValid)
+            {
+                Snackbar.Add("Please fill all required fields.", Severity.Warning);
+                return;
+            }
+
+            // ─── Validations ─────────────────────────────────────────────
+            if (_model.BusinessHead <= 0)
+            {
+                await ShowErrorDialog("Validation", "Business Head Data is missing.");
+                return;
+            }
+
+
+            // ✅ Validate checklist — at least all items must have Y/N
+            var unchecked_ = _model.Checklist.Where(c => c.Status == 0).ToList();
+
+            if (unchecked_.Any())
+            {
+                Snackbar.Add($"{unchecked_.Count} checklist item(s) have no YES/NO selection.", Severity.Warning);
+                return;
+            }
+
+
+            bool? confirm = await DialogService.ShowMessageBox("Confirmation", "Do you want to submit this audit form?", yesText: "  Yes  ", cancelText: "  No  ");
+
+            if (confirm == null) return;
+
+            _model.RequestedBuyerName = _CurrentUser.UserCode;
+            // ✅ Call your API here
+            // var req = new VendorAuditSaveRequest
+            // {
+            //     Form   = _model,
+            //     UserId = _userId,
+            //     Cmd    = "SUBMIT_VENDOR_AUDIT"
+            // };
+            // var res = await ApiService.CallingAPI<VendorAuditSaveResponse,
+            //               VendorAuditSaveRequest>("SUBMIT_VENDOR_AUDIT", req);
+            // if (res.ResponseCode == 0)
+            // {
+            //     Snackbar.Add("Audit form submitted.", Severity.Success);
+            //     MudDialog?.Close(DialogResult.Ok(true));
+            // }
+
+            Snackbar.Add("Audit form submitted successfully.", Severity.Success);
+            MudDialog?.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Submit failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    // ─── Cancel ───────────────────────────────────────────────────
+    private void Cancel()
+    {
+        MudDialog?.Close();
+    }
+}
+
+<style>
+    .mud-dialog-title {
+        color: white !important;
+        background: linear-gradient(to right, #0e6cb1, #ffffff) !important;
+    }
+
+    .mud-dialog-actions {
+        background: linear-gradient(to right, #3b7ed12b, #ffffff) !important;
+    }
+
+    .mud-simple-table thead th {
+        background-color: #ed008b !important;
+        color: white !important;
+        font-weight: bold !important;
+    }
+
+    .mud-simple-table.mud-table-dense * tr td,
+    .mud-simple-table.mud-table-dense * tr th {
+        padding: 4px 6px;
+    }
+
+    .table-container thead th {
+        position: sticky;
+        top: 0;
+        background: var(--mud-palette-surface);
+        z-index: 10;
+        box-shadow: 0 2px 2px rgba(0,0,0,0.1);
+    }
+</style>

@@ -1,0 +1,30 @@
+﻿@using Admin.Components.Account
+<Router AppAssembly="typeof(Program).Assembly">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.DashboardLayout)">
+            <Authorizing>
+                <p>Checking access...</p>
+            </Authorizing>
+            <NotAuthorized>
+                @* @{
+                    var t = routeData.PageType;
+                    while (t != null)
+                    {
+                        Console.WriteLine($"[AUTH DEBUG] Type: {t.FullName}");
+                        foreach (var a in t.GetCustomAttributes(false))
+                            Console.WriteLine($"    -> Attribute (declared here): {a.GetType().FullName}");
+                        t = t.BaseType;
+                    }
+                } *@
+                <RedirectOnNotAuthorized />
+            </NotAuthorized>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <RedirectToNotFound />
+    </NotFound>
+</Router>
+
+
+

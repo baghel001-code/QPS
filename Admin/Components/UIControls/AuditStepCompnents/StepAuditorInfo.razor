@@ -1,0 +1,35 @@
+﻿
+@using Application.DTOs
+@using MudBlazor
+
+<MudGrid>
+    <MudItem xs="12" sm="6">
+        <MudText Typo="Typo.caption" Color="Color.Secondary">Auditor</MudText>
+        <MudText Typo="Typo.body1" Class="font-weight-medium">@Dto.AuditorNameWithEmpCode</MudText>
+    </MudItem>
+
+    <MudItem xs="12" sm="6">
+        <MudText Typo="Typo.caption" Color="Color.Secondary">Audit Date</MudText>
+        <MudText Typo="Typo.body1" Class="font-weight-medium">@Dto.AuditDate.ToString("dd-MMM-yyyy")</MudText>
+    </MudItem>
+</MudGrid>
+
+<MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-6">
+    <MudButton Variant="Variant.Filled"
+               Color="Color.Primary"
+               EndIcon="@Icons.Material.Filled.ArrowForward"
+               OnClick="Save">
+        Next
+    </MudButton>
+</MudStack>
+
+@code {
+    [Parameter] public WizardStateDto AuditState { get; set; } = default!;
+    [Parameter] public EventCallback<StartAuditRequest> OnSave { get; set; }
+
+    private StartAuditRequest Dto { get; set; } = new();
+
+    protected override void OnParametersSet() => Dto = AuditState.Step1;
+
+    private async Task Save() => await OnSave.InvokeAsync(Dto);
+}

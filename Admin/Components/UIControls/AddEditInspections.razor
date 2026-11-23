@@ -1,0 +1,739 @@
+﻿@using Admin.Components.Pages.UserMaster
+@using Admin.Components.Shared
+@using Application.Interfaces.V1.Notifications
+@using Application.Interfaces.V1.User
+@using Application.Notifications
+@using Domain.Records
+@using EmailService.Models
+@using MudExtensions
+@using System.Text.RegularExpressions
+@using System.Security.Claims
+@inject IVendorLookupService _vendorLookup
+@inject IFetchMasterList _fetchMasterList
+@inject INotifier<InspectionCreatedModel> InspectionNotifier
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="form">
+            <MudGrid>
+                <MudItem xs="12" md="12">
+                    <MudGrid>
+                        <MudItem xs="12" md="12">
+                            <MudChip T="string" Variant="Variant.Outlined" Color="Color.Secondary">PO Details </MudChip>
+                        </MudItem>
+                        <!-- First Row  -->
+                        <MudItem xs="12" md="2">
+                            @if (IsEditMode)
+                            {
+                                <MudTextField T="string" Label="PO Number" ReadOnly="isFatched" @bind-Value="PO.PoNumber" Required="true" />
+                            }
+                            else
+                            {
+                                if (isFatched)
+                                {
+                                    <MudTextField T="string" Label="PO Number" ReadOnly="isFatched" @bind-Value="PO.PoNumber" Required="true" />
+                                }
+                                else
+                                {
+                                    <MudTextField T="string" Label="PO Number" ReadOnly="isFatched" @bind-Value="PO.PoNumber" Required="true" Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.FindInPage" AdornmentColor="Color.Secondary" OnAdornmentClick="@(() => OnFindClick())" />
+                                }
+                            }
+                        </MudItem>
+                        <MudItem xs="12" md="2">
+                            <MudTextField Label="Total Qty." @bind-Value="PO.POTotalQty" ReadOnly="true" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="2">
+                            <MudTextField T="string" Label="Vendor Code" ReadOnly="true" @bind-Value="PO.VendorCode" Required="true" />
+                        </MudItem>
+                        <MudItem xs="12" md="4">
+                            <MudTextField T="string" Label="Vendor Name" ReadOnly="true" @bind-Value="PO.VendorName" Required="true" />
+                        </MudItem>
+                        <MudItem xs="12" md="2">
+                            <MudTextField T="string" Label="Apparels" ReadOnly="true" @bind-Value="PO.Apparels" />
+                        </MudItem>
+                        <!-- Second Row  -->
+
+                        <MudItem xs="12" md="4">
+                            <MudTextField T="string" Label="Fabric" ReadOnly="true" @bind-Value="PO.Fabric" />
+                        </MudItem>
+                        <MudItem xs="12" md="2">
+                            <MudTextField T="string" Label="Color" ReadOnly="true" @bind-Value="PO.Color" />
+                        </MudItem>
+                        <MudItem xs="12" md="4">
+                            <MudTextField T="string" Label="Buyer" ReadOnly="true" @bind-Value="PO.BuyerName" />
+                        </MudItem>
+                        <MudItem xs="12" md="2">
+                            <MudTextField T="string" Label="Category" ReadOnly="true" @bind-Value="PO.Category" />
+                        </MudItem>
+                        <!-- Third Row  -->
+
+                        <MudItem xs="12" md="2">
+                            <MudTextField Label="Offered Qty." @bind-Value="PO.OfferedQty" />
+                        </MudItem>
+                        <MudItem xs="12" md="3">
+                            <MudDatePicker @bind-Date="PO.SelectedDateDOI"
+                                           Label="Allocate Date"
+                                           Required="true" />
+                        </MudItem>
+                        @*  <MudItem xs="12" md="3">
+                            <MudTimePicker @bind-Time="PO.SelectedTimeDOI"
+                                           Label="Allocate Time"
+                                           Required="true"
+                                           TimeFormat="hh:mm tt" AmPm="true" />
+                        </MudItem> *@
+                        <MudItem xs="12" md="2">
+                            <MudSelect T="int" Label="Select QAM" @bind-Value="PO.RegionId" Required="true">
+                                <MudSelectItem Value="0">--Select--</MudSelectItem>
+                                @foreach (var item in PO.RegionList)
+                                {
+                                    <MudSelectItem Value="@item.Master_ID">
+                                        @( $"{item.Master_Name}")
+                                    </MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" md="3">
+                            <MudSelect T="int" Label="Select Inspection Type" @bind-Value="PO.InspectionTypeId" Required="true">
+                                <MudSelectItem Value="0">--Select--</MudSelectItem>
+                                @foreach (var item in PO.InspectionTypeList)
+                                {
+                                    <MudSelectItem Value="@item.Master_ID">
+                                        @( $"{item.Master_Name}")
+                                    </MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" md="2">
+                            <MudCheckBox T="bool" Value="tempQcAtDcValue" Label="QC at DC" Color="Color.Primary" ValueChanged="OnQcAtDcChanged" />
+                        </MudItem>
+                        <!-- Forth Row  -->
+
+                        <MudItem xs="12" md="12">
+                            <MudSelect T="int"
+                                       Label="Select Inspection Location"
+                                       Value="@PO.AddressId"
+                                       ValueChanged="OnLocationChanged"
+                                       Required="true">
+                                <MudSelectItem Value="0">--Select--</MudSelectItem>
+                                @foreach (var item in PO.AddressList)
+                                {
+                                    <MudSelectItem Value="@item.AddressId">
+                                        @( $"{item.AddressLine1}, {item.City}, {item.RegionDescription} ({item.PinCode}) | {item.Contact_Person}, Mob#{item.Mobile_Numbers}")
+                                    </MudSelectItem>
+                                }
+                                @if (isFatched)
+                                {
+                                    <MudSelectItem Value="-1">
+                                        Other
+                                    </MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+
+
+                        <!-- Role Selection -->
+                        <MudItem xs="12" md="12">
+                            <MudChip T="string" Variant="Variant.Outlined" Color="Color.Secondary">List of Line Items </MudChip>
+                        </MudItem>
+                        <MudItem xs="12" md="12">
+                            <MudTable T="PODetails" Items="PO.Details" Hover="true" Dense="true" Bordered="true" Striped="true" SortLabel="Sort By">
+                                <HeaderContent>
+                                    <MudTh><MudTableSortLabel SortBy="new Func<PODetails, object>(x => x.LineItem)">LINE ITEM</MudTableSortLabel></MudTh>
+                                    <MudTh Style="width:80px;"><MudTableSortLabel SortBy="new Func<PODetails, object>(x => x.Article)">ARTICLE</MudTableSortLabel></MudTh>
+                                    <MudTh><MudTableSortLabel SortBy="new Func<PODetails, object>(x => x.ArticleDesc)">ARTICLE DESCRIPTION</MudTableSortLabel></MudTh>
+                                    <MudTh><MudTableSortLabel SortBy="new Func<PODetails, object>(x => x.PrepackQty)">PREPACK QTY.</MudTableSortLabel></MudTh>
+                                    <MudTh><MudTableSortLabel SortBy="new Func<PODetails, object>(x => x.PurchaseTotQty)">TOTAL QTY.</MudTableSortLabel></MudTh>
+                                    <MudTh><MudTableSortLabel SortBy="new Func<PODetails, object>(x => x.PrepackQtyEaches)">PREPACK QTY. EACHES</MudTableSortLabel></MudTh>
+                                    <MudTh><MudTableSortLabel SortBy="new Func<PODetails, object>(x => x.Eaches)">EACHES</MudTableSortLabel></MudTh>
+                                    <MudTh><MudTableSortLabel SortBy="new Func<PODetails, object>(x => x.Eaches)">MRP</MudTableSortLabel></MudTh>
+                                    @* <MudTh></MudTh> *@
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd DataLabel="LINE ITME">@context.LineItem</MudTd>
+                                    <MudTd DataLabel="ARTICLE">@context.Article</MudTd>
+                                    <MudTd DataLabel="DESCRIPTION">@context.ArticleDesc</MudTd>
+                                    <MudTd DataLabel="TOTAL QTY.">@context.PrepackQty</MudTd>
+                                    <MudTd DataLabel="TOTAL QTY.">@context.PurchaseTotQty</MudTd>
+                                    <MudTd DataLabel="TOTAL QTY.">@context.PrepackQtyEaches</MudTd>
+                                    <MudTd DataLabel="TOTAL QTY.">@context.Eaches</MudTd>
+                                    <MudTd DataLabel="TOTAL QTY.">@context.MRP</MudTd>
+                                    @*   <MudTd>
+                                        <MudTooltip Text="Edit Details" ShowOnFocus="false">
+                                            <MudIconButton Icon="@Icons.Material.Filled.ModeEdit" Color="Color.Secondary" Size="Size.Small"
+                                                           OnClick="@(() => EditItem(context))" />
+                                        </MudTooltip>
+                                    </MudTd> *@
+                                </RowTemplate>
+                                <PagerContent>
+                                    <MudTablePager PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
+                                </PagerContent>
+                            </MudTable>
+                        </MudItem>
+                    </MudGrid>
+                </MudItem>
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+
+    <DialogActions>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Warning">Status : @PO.Insp_Req_Status  </MudChip>
+        @if (!PO.Is_Date_Assigned_By_QA && !PO.Is_Inspector_Assigned)
+        {
+            <MudButton OnClick="Save" Color="Color.Secondary" Variant="Variant.Filled" Disabled="@isSubmitting">Save Request</MudButton>
+            <MudButton OnClick="Reset" Color="Color.Warning" Variant="Variant.Filled">Reset</MudButton>
+        }
+        <MudButton OnClick="CancelRequest" Color="Color.Error" Variant="Variant.Outlined">Cancel Request</MudButton>
+        <MudButton OnClick="CloseDialog" Color="Color.Error" Variant="Variant.Filled">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+<Loader IsVisible="@IsLoading" />
+
+@code {
+    [Inject] private IPoSyncService _poSyncService { get; set; } = default!;   // NEW
+    [Inject] protected ICurrentUserService _CurrentUser { get; set; } = default!;
+    [Inject] private PoResolver _poResolver { get; set; } = default!;
+    bool isShow;
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+    [Parameter]
+    public POHeader PO { get; set; } = new();
+    [Parameter] public bool IsEditMode { get; set; }
+    public bool IsMaked { get; set; } = false;
+
+    private bool isFatched { get; set; }
+
+    private MudForm form;
+    private bool isSubmitting = false;
+    bool IsLoading = false;
+    // private int User_Id = 0;
+    // private string LoggedVendorCode = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+
+        try
+        {
+            // ✅ Guard : PO parameter null check
+            if (PO == null)
+            {
+                // Snackbar.Add("Inspection data is missing.", Severity.Error);
+                PO = new();
+                isFatched = false;
+            }
+            else
+            {
+                isFatched = IsEditMode;
+                tempQcAtDcValue = PO.Is_Qc_At_Dc;
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error initializing page: {ex.Message}", Severity.Error);
+        }
+
+    }
+
+    private async Task Reset()
+    {
+        bool? dres = await DialogService.ShowMessageBox("Confirmation", "Are you sure you want to reset the form ?", yesText: "  Yes!  ", cancelText: "   No   ");
+        if (dres == null)
+        {
+            return;
+        }
+        else
+        {
+            PO = new();
+            IsEditMode = false;
+            isFatched = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CancelRequest()
+    {
+        PO.IsCancelled = true;
+        Save();
+    }
+    //Get_Roles_List
+    private async void Save()
+    {
+
+        if (string.IsNullOrEmpty(PO.VendorCode))
+        {
+            await ShowErrorDialog("Validation", "Vendor Code & Vendor Name are required.");
+            return;
+        }
+        if (PO.Details.Count == 0)
+        {
+            await ShowErrorDialog("Validation", "At least one line item is required.");
+            return;
+        }
+
+        if (PO.OfferedQty <= 0)
+        {
+            await ShowErrorDialog("Validation", "Offered Qty. is required.");
+            return;
+        }
+        if (PO.RegionId == 0)
+        {
+            await ShowErrorDialog("Validation", "Region is required.");
+            return;
+        }
+        if (PO.AddressId <= 0)
+        {
+            await ShowErrorDialog("Validation", "Location is required.");
+            return;
+        }
+        // if (PO.OfferedQty > (PO.POTotalQty * 1.10m))
+        // {
+        //     await ShowErrorDialog("Validation", "Offered quantity exceeds the allowed 10% additional limit of the total quantity.");
+        //     return;
+        // }
+
+
+
+        bool? dres = await DialogService.ShowMessageBox("Confirmation", "Do you want to save Inspection details?", yesText: "  Yes!  ", cancelText: "   No   ");
+        if (dres == null)
+        {
+            return;
+        }
+        else
+        {
+            await form.Validate();
+
+            if (form.IsValid)
+            {
+
+                PO.CreatedBy =_CurrentUser.UserId;// Set the CREATED BY
+                IsLoading = true;
+                StateHasChanged();
+                var res1 = await ApiMasterService.CallingAPI<GenRes, POHeader>(AllApiNames.SAVE_INSPECTION!, PO);
+                IsLoading = false;
+                StateHasChanged();
+                if (res1.responseCode.Equals(0))
+                {
+                    var success = await InspectionNotifier.NotifyAsync(new InspectionCreatedModel(PO, res1.recordId));
+                    Snackbar.Add(success ? "PO record saved successfully." : "PO record saved successfully but email not sent.", Severity.Success);
+                    MudDialog?.Close();
+                }
+                else
+                {
+                    await ShowErrorDialog("Error!", res1.responseMessage!);
+                }
+
+
+            }
+        }
+
+    }
+    
+    private void CloseDialog()
+    {
+        MudDialog?.Close();
+    }
+    private async Task ShowErrorDialog(string Tital, string message)
+    {
+        await DialogService.ShowMessageBox(Tital, message);
+    }
+    // Find Button Logic
+    private async Task OnFindClick()
+    {
+        if (string.IsNullOrEmpty(PO.PoNumber))
+        {
+            await ShowErrorDialog("Warning", "Please enter a valid PO Number");
+            return;
+        }
+
+        var pno = PO.PoNumber;
+        IsLoading = true;
+        var result = await _poResolver.ResolveAsync(pno);
+        IsLoading = false;
+
+        if (!result.Found)
+        {
+            await ShowErrorDialog("Info", result.ErrorMessage ?? "PO not found.");
+            PO = new();
+            PO.PoNumber = pno;
+            return;
+        }
+        // Ownership is checked first, so a vendor can never trigger a sync for another vendor's PO
+        if (_CurrentUser.UserCode != result.PO!.VendorCode)
+        {
+            await ShowErrorDialog("Info", "This PO number is not assigned to you.");
+            PO = new();
+            PO.PoNumber = pno;
+            return;
+        }
+        // NEW: the PO already exists in QPS - refresh it from SAP before a new request is raised (E5, E7, N1, N8, N10)
+        if (result.Origin == Domain.Enums.DataOrigin.Local)
+        {
+            IsLoading = true; StateHasChanged();
+            var sync = await _poSyncService.SyncAsync(result.PO, _CurrentUser.UserId);
+            IsLoading = false; StateHasChanged();
+
+            if (sync.Issue == PoSyncIssue.NotFoundInSap)
+            {
+                await ShowErrorDialog("Info", $"PO {pno} is no longer available in SAP (cancelled or closed). An inspection request cannot be raised.");
+                PO = new();
+                PO.PoNumber = pno;
+                return;
+            }
+
+            if (sync.Issue == PoSyncIssue.VendorChanged)
+            {
+                // Generic text: never show another vendor's code to the vendor
+                await ShowErrorDialog("Info", $"PO {pno} has been reassigned in SAP. Please contact the QA team.");
+                PO = new();
+                PO.PoNumber = pno;
+                return;
+            }
+
+            if (!sync.Success)
+                await ShowErrorDialog("Warning", "Latest PO details could not be fetched from SAP. The details already available in QPS will be used.");
+        }
+        PO = result.PO;
+
+        if (result.Origin == Domain.Enums.DataOrigin.Local)
+        {
+            await ShowErrorDialog("Info", "PO details already exist.");
+
+            if (result.PO.IsLastRequestPending == true)
+            {
+                await ShowErrorDialog("Info", "Last Inspection request is under process.");
+                MudDialog?.Close();
+                return;
+            }
+        }
+
+        IsLoading = true; StateHasChanged();
+        var vendorResult = await _vendorLookup.GetByCodeAsync(PO.VendorCode);
+        IsLoading = false; StateHasChanged();
+        if (vendorResult.Found)
+        {
+            foreach (var addrss in vendorResult.Vendor!.VendorAddresses)
+                PO.AddressList.Add(mapper.Map<VendorAddressDetail>(addrss));
+        }
+
+        PO.RegionList = (await _fetchMasterList.FetchMasterList(CmdNames.Get_Region_With_QAM)).masterDataList;
+        PO.InspectionTypeList = (await _fetchMasterList.FetchMasterList(CmdNames.Get_Inspection_Type, 0, PO.PoNumber)).masterDataList;
+
+        isFatched = true;
+    }
+  
+    private async void AddToAddressList()
+    {
+        await form.Validate();
+
+        if (form.IsValid)
+        {
+
+        }
+    }
+    private async void EditItem(PODetails request)
+    {
+
+        var parameters = new DialogParameters
+        {
+            { "_vendor",  new Vendor()  },
+            { "IsEditMode", false }
+        };
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
+
+        var dialog = await DialogService.ShowAsync<POLineItemDetails>("PO Line Item Detials", parameters, options);
+
+        var result = await dialog.Result;
+
+    }
+
+    private async Task OnLocationChanged(int newValue)
+    {
+        PO.AddressId = newValue;
+
+        if (newValue == -1)  // If "Other" selected
+        {
+            var parameters = new DialogParameters
+            {
+                ["PO"] = PO // optional
+            };
+
+            var options = new DialogOptions
+            {
+                CloseButton = true,
+                MaxWidth = MaxWidth.Small,
+                FullWidth = true
+            };
+
+            var dialog = DialogService.Show<AddNewAddressDialog>("Add New Address", parameters, options);
+            var result = await dialog.Result;
+            if (!result!.Canceled)
+            {
+                int addId = (int)result.Data;
+                UpdateAddressList(addId);
+            }
+            StateHasChanged();
+        }
+    }
+    private async void UpdateAddressList(int addId)
+    {
+        IsLoading = true; StateHasChanged();
+        var result = await _vendorLookup.GetByCodeAsync(PO.VendorCode);
+        IsLoading = false; StateHasChanged();
+        if (result.Found)
+        {
+            PO.AddressId = addId;
+            PO.AddressList.Clear();
+            foreach (var addrss in result.Vendor!.VendorAddresses)
+            {
+                PO.AddressList.Add(mapper.Map<VendorAddressDetail>(addrss));
+            }
+            StateHasChanged();
+        }
+    }
+
+    private bool tempQcAtDcValue;
+
+    private async Task OnQcAtDcChanged(bool newValue)
+    {
+        if (newValue)
+        {
+            bool? confirmed = await DialogService.ShowMessageBox(
+                "Confirm Inspection Location",
+                "You're about to raise this inspection request as QC at DC (Quality Check at Distribution Center)." +
+                " The inspection will be carried out at the Distribution Center, not at your factory/warehouse." +
+                " Please ensure goods are dispatched to the DC before the inspection date." +
+                " This setting cannot be changed after submission." +
+                " Do you want to continue with QC at DC?",
+                yesText: "Yes, Continue",
+                cancelText: "No, Cancel");
+
+            if (confirmed == true)
+            {
+                PO.Is_Qc_At_Dc = true;
+                tempQcAtDcValue = true;
+            }
+            else
+            {
+                PO.Is_Qc_At_Dc = false;
+                tempQcAtDcValue = false;
+            }
+        }
+        else
+        {
+            PO.Is_Qc_At_Dc = false;
+            tempQcAtDcValue = false;
+        }
+    }
+}
+<style>
+    .muddividr {
+        margin: 0 !important;
+        border-color: #f408b2 !important;
+        border-width: 2px;
+    }
+
+    .mud-breadcrumbs {
+        padding: 12px 12px;
+    }
+
+    .floating-search-btn {
+        position: fixed;
+        top: 50%;
+        right: 0;
+        transform: translateY(-50%);
+        background-color: #e91e63;
+        color: white;
+        padding: 10px 6px;
+        border-radius: 8px 0 0 8px;
+        cursor: pointer;
+        writing-mode: vertical-rl;
+        text-orientation: mixed;
+        font-weight: bold;
+        z-index: 999;
+        box-shadow: 0 0 8px rgba(0,0,0,0.2);
+    }
+
+        .floating-search-btn:hover {
+            background-color: #c2185b;
+        }
+
+    .search-modal {
+        position: fixed;
+        top: 170px;
+        right: 35px;
+        background-color: white;
+        width: 320px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+        border-radius: 8px;
+        z-index: 1000;
+    }
+
+        .search-modal .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .search-modal .close-btn {
+            background: none;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+        }
+
+    .mud-simple-table.mud-table-dense * tr td, .mud-simple-table.mud-table-dense * tr th {
+        padding: 2px 4px
+    }
+
+    .font8 {
+        font-size: 0.8rem;
+    }
+
+    .mud-list-subheader-extended {
+        padding-top: 0px;
+        padding-bottom: 0px;
+        margin-bottom: -12px !important;
+    }
+
+    .mud-list-item-extended {
+        padding-bottom: 0px !important;
+    }
+
+    .mud-list-item-gutters-extended.mud-list-item-dense-extended {
+        padding-left: 4px;
+        padding-right: 4px;
+        padding-top: 0px;
+        padding-bottom: 0px;
+    }
+
+    .mud-list-subheader-gutters-extended {
+        padding-left: 8px;
+        padding-right: 8px;
+        padding-top: 0px !important;
+        padding-bottom: 0px !important;
+    }
+
+    .mud-icon-button-edge-margin-end {
+        color: red !important;
+    }
+
+    .mud-input > input.mud-input-root-outlined, div.mud-input-slot.mud-input-root-outlined {
+        padding: 15px 10px;
+        font-size: 12px;
+        height: 20px !important;
+    }
+
+
+
+    .filter-paper {
+        padding-left: 8px !important;
+        padding-right: 8px !important;
+        padding-top: 25px !important;
+        padding-bottom: 5px !important;
+        margin-left: 22px !important;
+        margin-right: 28px !important;
+        margin-bottom: 20px !important;
+    }
+
+    .mud-link {
+        font-size: 0.8rem !important;
+    }
+
+    .mud-list-item-multiselect-extended.mud-list-item-multiselect-checkbox-extended {
+        padding-inline-end: 0px;
+    }
+
+    .border1pxblack {
+        border: 1px solid #ffffffeb;
+        background-color: #ed008b !important;
+        color: white;
+    }
+
+    .border1pxblack1 {
+        background-color: #ed008b !important;
+        color: white;
+        border: none !important;
+    }
+
+    .my-custom-select {
+        position: relative;
+    }
+
+        .my-custom-select .mud-popover {
+            padding-top: 20px;
+        }
+
+    .filter-close-button {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        cursor: pointer;
+        background-color: white;
+        border: 1px solid #ccc;
+        border-radius: 50%;
+        padding: 2px;
+        z-index: 99999;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+
+    .mud-list-subheader-extended {
+        top: -6px !important;
+    }
+
+    .mud-list-subheader-extended {
+        position: relative !important;
+    }
+
+    .disabled-div {
+        pointer-events: none; /* Prevent clicks */
+        opacity: 0.6; /* Dimmed look */
+        background-color: #f0f0f0; /* Optional: lighter background */
+        user-select: none; /* Prevent text selection */
+    }
+
+    .mud-dialog-title {
+        border-bottom: 1px solid #1413140d;
+    }
+
+    .mud-dialog-actions {
+        border-top: 1px solid #1413140d;
+    }
+
+    .mud-dialog-content {
+        padding-top: 1.5rem !important;
+        padding-bottom: 1.5rem !important;
+    }
+
+    .mud-dialog-title {
+        padding: 11px !important;
+    }
+
+    .mud-message-box__yes-button {
+        color: white !important;
+        background-color: green !important;
+    }
+
+    .mud-message-box__cancel-button {
+        color: white !important;
+        background-color: red !important;
+    }
+
+    .mud-message-box .mud-dialog-actions {
+        display: flex;
+        flex-direction: row-reverse;
+        justify-content: flex-start;
+    }
+</style>
+<style>
+
+    .mud-dialog-title {
+        color: white !important;
+        background: linear-gradient(to right, #0e6cb1, #ffffff) !important;
+    }
+
+    .mud-dialog-actions {
+        background: linear-gradient(to right, #3b7ed12b, #ffffff) !important
+    }
+
+</style>

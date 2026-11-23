@@ -1,0 +1,143 @@
+﻿@using Application.DTOs
+<MudDialog>
+    <DialogContent>
+        <!-- PRINT AREA -->
+        <div id="print-area">
+
+            <MudPaper Elevation="0" Class="pa-2 print-paper">
+                <!-- HEADER -->
+                <p>
+                    <span class="label">Objective:</span>
+                    To assess the new &amp; existing supplier&rsquo;s setup for technical compliance.
+                </p>
+
+                <p class="label">Procedure:</p>
+                <ul>
+                    <li>Proposed facility will be assessed against key elements, with a set of audit questions.</li>
+                    <li>Based on the actual finding and documented evidence, ratings will be awarded on a scale of 2 to 10.</li>
+                    <li>
+                        Final score will be calculated as below:
+                        <ol type="A">
+                            <li>Key element score = Total value of check points score (&divide;) number of check points</li>
+                            <li>0.4 and below score will be rounded to lower digit. 0.5 and above score will be rounded to upper digit.</li>
+                            <li>Key elements score total to be assigned to the closest rating (eg: 2.9 and below score to be considered to 2 and 3 and above to be considered to 4)</li>
+                            <li>Factory approval based on the receipt of below mentioned check list (1 to 14).</li>
+                        </ol>
+                    </li>
+                    <li>
+                        % Audit Score = [(0.25 (No of elements&le;4) + 0.5 (no of elements=6) + 1 (no of elements &gt;6)] X 100 / No of key elements
+                    </li>
+                </ul>
+
+                <p class="rating-title">Rating will be as per the following grid.</p>
+
+                <table>
+                    <tbody>
+                        <tr>
+                            <th><b>Numerical score</b></th>
+                            <th>0</th>
+                            <th>2</th>
+                            <th>4</th>
+                            <th>6</th>
+                            <th>8</th>
+                            <th>10</th>
+                        </tr>
+                    </tbody>
+                </table>
+                <!-- CONFORMITY TABLE -->
+                <MudTable T="AuditGradeResponse" Items="@RatingMaster" Dense="true" Bordered="true">
+                    <HeaderContent>
+                        <MudTh>% Audit Score*</MudTh>
+                        <MudTh>Rating</MudTh>
+                        <MudTh>Color Indicator</MudTh>
+                    </HeaderContent>
+                    <RowTemplate Context="row">
+                        <MudTd Class="text-center"><b>@row.MinScore.ToString("F0") - @row.MaxScore.ToString("F0")</b></MudTd>
+                        <MudTd Class="text-center"><b>@row.GradeCode - @row.ValidationPeriod </b></MudTd>
+                        <MudTd Class="text-center" style="@(!string.IsNullOrEmpty(row.ColorHex) ? $"background-color:{row.ColorHex};" : "")"><b>@row.Description</b></MudTd>
+                    </RowTemplate>
+                </MudTable>
+
+                <MudDivider Class="my-3" />
+            </MudPaper>
+        </div>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Color="Color.Primary" OnClick="Close">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+    [Parameter] public List<AuditGradeResponse> RatingMaster { get; set; } = new();
+    void Close() => MudDialog?.Close();
+
+}
+<style>
+    .text-center {
+        text-align: center;
+    }
+</style>
+<style>
+    body {
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 14px;
+        color: #222;
+        line-height: 1.6;
+        max-width: 900px;
+        margin: 20px auto;
+        padding: 0 15px;
+    }
+
+    h3 {
+        margin-bottom: 4px;
+    }
+
+    .label {
+        font-weight: bold;
+    }
+
+    ul {
+        margin-top: 4px;
+        padding-left: 22px;
+    }
+
+        ul li {
+            margin-bottom: 6px;
+        }
+
+    ol {
+        margin-top: 4px;
+        padding-left: 22px;
+    }
+
+        ol li {
+            margin-bottom: 6px;
+        }
+
+    table {
+        border-collapse: collapse;
+        width: 100%;
+        margin-top: 12px;
+    }
+
+    table, th, td {
+        border: 1px solid #444;
+    }
+
+    th, td {
+        padding: 8px 12px;
+        text-align: center;
+    }
+
+    th {
+        background-color: #f0f0f0;
+    }
+
+    .rating-title {
+        font-weight: bold;
+        margin-top: 18px;
+    }
+</style>

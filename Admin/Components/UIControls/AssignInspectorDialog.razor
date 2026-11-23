@@ -1,0 +1,394 @@
+﻿@using Admin.Components.Pages.UserMaster
+@using Admin.Components.Shared
+@using Application.DTOs.Asn
+@using Application.Interfaces.V1.Notifications
+@using Application.Interfaces.V1.User
+@using Application.Notifications
+@using EmailService.Models
+@using MudExtensions
+@using System.Text.RegularExpressions
+@using System.Security.Claims
+@using System.Reflection
+@using System.Text
+@inject INotifier<DoiConfirmedModel> _doiNotifier
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="form">
+            <MudTable Items="rows" FixedHeader="true" Height="700px" Loading="@loading" Dense="true" Hover="true" RowClassFunc="@((item, index) => item.IS_CHANGEABLE_BY_ADMIN ? "bg-finalized" : "")">
+                <HeaderContent>
+                    <MudTh>Request No</MudTh>
+                    <MudTh>PO No.</MudTh>
+                    <MudTh>Vendor</MudTh>
+                    <MudTh>Location</MudTh>
+                    <MudTh>Category</MudTh>
+                    <MudTh>DoI</MudTh>
+                    <MudTh>QA DoI</MudTh>
+                    <MudTh>Inspector (QA)</MudTh>
+                </HeaderContent>
+
+                <RowTemplate>
+                    <MudTd>@context.INSPECTION_NO</MudTd>
+                    <MudTd>@context.PO_NUMBER</MudTd>
+                    <MudTd>@context.VENDOR_NAME (@context.VENDOR_CODE)</MudTd>
+                    <MudTd>@context.ADDRESS_LINE1, @context.CITY ( @context.PINCODE ) </MudTd>
+                    <MudTd>@context.CATEGORY</MudTd>
+                    <MudTd>@context.DATE_OF_INSPECTION.ToShortDateString()</MudTd>
+                    <MudTd>
+                        @if (context.IS_CHANGEABLE_BY_ADMIN)
+                        {
+                            <MudText Typo="Typo.body2">@context.SelectedDate?.ToShortDateString()</MudText>
+                        }
+                        else
+                        {
+                            <MudDatePicker @bind-Date="context.SelectedDate" Dense="true" MinDate="@DateTime.Today" />
+                        }
+                    </MudTd>
+                    <MudTd>
+                        @if (context.IS_CHANGEABLE_BY_ADMIN)
+                        {
+                            <MudText Typo="Typo.body2">@inspectorNameLookup.GetValueOrDefault(context.INSPECTOR_EMP_CODE, "-")</MudText>
+                        }
+                        else
+                        {
+                            <MudSelect T="int" Dense="true" @bind-Value="context.INSPECTOR_EMP_CODE" Placeholder="Select Inspector">
+                                <MudSelectItem Value="0">--Select--</MudSelectItem>
+                                @if (regionInspectors.TryGetValue(context.REGION_ID, out var list))
+                                {
+                                    @foreach (var insp in list)
+                                    {
+                                        <MudSelectItem Value="@insp.INSPECTOR_CODE">@insp.InspectorName (@insp.INSPECTOR_CODE)</MudSelectItem>
+                                    }
+                                }
+                            </MudSelect>
+                        }
+                    </MudTd>
+                </RowTemplate>
+                <LoadingContent>
+                    <MudText>Loading...</MudText>
+                </LoadingContent>
+                <NoRecordsContent>
+                    <MudText>No records found</MudText>
+                </NoRecordsContent>
+            </MudTable>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Save" Color="Color.Primary" Disabled="@(!CanSave)" Variant="Variant.Filled">Update</MudButton>
+        <MudButton OnClick="Cancel" Color="Color.Error" Variant="Variant.Filled">Cancel</MudButton>
+        @*  @if (IsQAAdmin)
+        {
+            <MudButton OnClick="SaveFinalize" Color="Color.Primary" Disabled="@(!CanSave)" Variant="Variant.Filled">Freeze</MudButton>
+        } *@
+    </DialogActions>
+</MudDialog>
+<Loader IsVisible="@loading" />
+
+@code {
+    [Inject] protected ICurrentUserService _CurrentUser { get; set; } = default!;
+    private Dictionary<int, List<InspectorDto>> regionInspectors = new();
+
+    private Dictionary<int, string> inspectorNameLookup = new();
+
+    [Parameter] public string IDs { get; set; }
+    [Parameter] public string RegionIDs { get; set; }
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+    private MudForm form;
+    bool loading = true;
+    bool IsError = false;
+    List<InspectionAssignRowDto> rows = new List<InspectionAssignRowDto>();
+    List<InspectorDto> inspectors = new List<InspectorDto>();
+    public List<MasterData> InspectorList = new();
+    bool CanSave => rows.Any(x => x.INSP_ID > 0);
+    private SelectListReq selectListReq = new();
+    private List<InspectionAssignRowDto> OriginalList = new();
+    //----------------------------------------------
+
+    protected override async Task OnInitializedAsync()
+    {
+        loading = true;
+        await GetInspections();
+        await GetInspectors();
+        loading = false;
+        StateHasChanged();
+    }
+    private async Task GetInspections()
+    {
+        selectListReq.Id = 0;
+        selectListReq.StrField = IDs;
+        selectListReq.Cmd = "";
+        var res = await ApiMasterService.CallingAPI<AssignPendingInspectionListResponse, SelectListReq>(AllApiNames.GET_ALL_ASSIGNPENDING_INSPN, selectListReq);
+        if (res.responseCode == 0)
+        {
+            if (res.ListofInspections == null)
+            {
+                Snackbar.Add("No record found.", Severity.Error);
+            }
+            else
+            {
+                // Load from DB
+                foreach (var item in res.ListofInspections.OrderBy(a => a.REGION_ID))
+                {
+
+                    var mapped = mapper.Map<InspectionAssignRowDto>(item);
+                    mapped.QA_ASSIGNED_DOI = mapped.QA_ASSIGNED_DOI == DateTime.MinValue ? null : mapped.QA_ASSIGNED_DOI;
+                    rows.Add(mapped);
+                    OriginalList.Add(mapped.Clone());
+                }
+
+            }
+        }
+        else
+        {
+            Snackbar.Add(res.responseMessage!, Severity.Error);
+        }
+    }
+
+    private async Task GetInspectors()
+    {
+        selectListReq.Id = 0;
+        selectListReq.StrField = RegionIDs;
+        selectListReq.Cmd = CmdNames.Get_Region_Wise_Inspectors;
+        var res = await ApiMasterService.CallingAPI<GetAllUsersRes, SelectListReq>(AllApiNames.GET_ALL_USERS, selectListReq);
+
+        if (res.responseCode == 0 && res.UserDetailsList.Count > 0)
+        {
+            foreach (var item in res.UserDetailsList)
+            {
+                var insp = new InspectorDto
+                {
+                    INSPECTOR_CODE = int.Parse(item.Emp_Code!),
+                    InspectorName = item.Emp_Name!.ToString(),
+                    RegionIds = item.RGN!.Split(',').ToList()
+                };
+                inspectors.Add(insp);
+                inspectorNameLookup[insp.INSPECTOR_CODE] = insp.InspectorName;
+
+                foreach (var regionIdStr in insp.RegionIds)
+                {
+                    if (int.TryParse(regionIdStr, out var regionId))
+                    {
+                        if (!regionInspectors.TryGetValue(regionId, out var list))
+                        {
+                            list = new List<InspectorDto>();
+                            regionInspectors[regionId] = list;
+                        }
+                        list.Add(insp);
+                    }
+                }
+            }
+        }
+        else if (res.responseCode != 0)
+        {
+            Snackbar.Add(res.responseMessage!, Severity.Error);
+        }
+    }
+    void Cancel() => MudDialog?.Close();
+
+    async Task Save()
+    {
+        bool? dres = await DialogService.ShowMessageBox("Confirmation", "Do you want to update Inspection(s) details?", yesText: "  Yes!  ", cancelText: "   No   ");
+        if (dres == null)
+        {
+            return;
+        }
+        else
+        {
+            foreach (var row in rows)
+                row.QA_ASSIGNED_DOI = row.SelectedDate;
+            GetChangedRows();
+
+            foreach (var row in rows)
+            {
+                if (row.ISQADOICHANGED)
+                {
+                    await UpDateDOI(row);
+                }
+                if (row.ISQACHANGED)
+                {
+                    await UpdateQA(row);
+                }
+                //Console.WriteLine($"{row.INSP_ID} - {row.AuditLog}");
+            }
+            if (!IsError)
+                MudDialog.Close(DialogResult.Ok(true));
+        }
+
+
+    }
+
+    private void GetChangedRows()
+    {
+        foreach (var edited in rows)
+        {
+            var original = OriginalList.FirstOrDefault(x => x.INSP_ID == edited.INSP_ID);
+            if (original != null)
+            {
+                var changedProperties = GetChangedProperties(original, edited);
+                if (changedProperties.Any())
+                {
+                    edited.ISQADOICHANGED = original!.QA_ASSIGNED_DOI != edited.QA_ASSIGNED_DOI;
+                    edited.ISQACHANGED = original!.INSPECTOR_EMP_CODE != edited.INSPECTOR_EMP_CODE;
+                    var sb = new StringBuilder();
+                    foreach (var prop in changedProperties)
+                    {
+                        sb.AppendLine(
+                            $"Property {prop.Key} changed from '{prop.Value.Item1}' to '{prop.Value.Item2}'"
+                        );
+                    }
+                    edited.AuditLog = sb.ToString();
+                }
+            }
+
+        }
+        // Now you can save only changed properties or do custom logic
+    }
+    private Dictionary<string, (object, object)> GetChangedProperties<T>(T original, T edited)
+    {
+        var changes = new Dictionary<string, (object, object)>();
+        var properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);
+
+        foreach (var prop in properties)
+        {
+            var originalValue = prop.GetValue(original);
+            var editedValue = prop.GetValue(edited);
+
+            if (!Equals(originalValue, editedValue))
+            {
+                changes.Add(prop.Name, (originalValue, editedValue));
+            }
+        }
+
+        return changes;
+    }
+
+    private async Task UpDateDOI(InspectionAssignRowDto row)
+    {
+
+        UpdateDOIRequest reqObj = new UpdateDOIRequest()
+        {
+            InspId = row.INSP_ID,
+            CreatedBy = _CurrentUser.UserId,
+            QA_ASSIGNED_DOI = row.QA_ASSIGNED_DOI,
+            OfferedQty = row.OFFERED_QTY
+
+        };
+
+        var res1 = await ApiMasterService.CallingAPI<GenRes, UpdateDOIRequest>(AllApiNames.UPDATE_DOI!, reqObj);
+        if (res1.responseCode.Equals(0))
+        {
+            bool sent = await _doiNotifier.NotifyAsync(new DoiConfirmedModel(row));
+
+            if (sent)
+            {
+                Snackbar.Add("Date of inspection assigned successfully and confirmation email sent to vendor.", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("DOI confirmed, but email failed to send.", Severity.Warning);
+            }
+            IsError = false;
+        }
+        else
+        {
+            IsError = true;
+            await DialogService.ShowMessageBox("Error!", res1.responseMessage!);
+        }
+    }
+    private async Task UpdateQA(InspectionAssignRowDto row)
+    {
+        if (row.INSPECTOR_EMP_CODE > 0)
+        {
+            AssignInspectorRequest reqObj = new AssignInspectorRequest()
+            {
+                InspId = row.INSP_ID,
+                CreatedBy = _CurrentUser.UserId,
+                INSPECTOR_EMP_CODE = row.INSPECTOR_EMP_CODE.ToString(),
+                OfferedQty = row.OFFERED_QTY
+
+            };
+
+            var res1 = await ApiMasterService.CallingAPI<GenRes, AssignInspectorRequest>(AllApiNames.ASSIGN_INSPECTOR!, reqObj);
+            if (res1.responseCode.Equals(0))
+            {
+                //------------------Req ASN ----------------------
+                if (row.IS_QC_AT_DC)
+                {
+                    var dto = new CreateAsnRequestDto
+                    {
+                        InspId = row.INSP_ID,
+                        ShipQty = (int)row.OFFERED_QTY,
+                        RequestedQty = (int)row.OFFERED_QTY,
+                        Remarks = "QC at DC ASN Request.",
+                        CreatedBy = _CurrentUser.UserId
+                    };
+                    var res = await ApiMasterService.CallingAPI<GenRes, CreateAsnRequestDto>(AllApiNames.ASN_REQUEST_CREATE!, dto);
+                    if (res.responseCode.Equals(0) && res.responseMessage!.ToUpper() == "SUCCESS")
+                    {
+                        Snackbar.Add("ASN request submitted", Severity.Success);
+                    }
+                    else
+                    {
+                        Snackbar.Add($"Failed to submit: {res.responseMessage}", Severity.Error);
+                    }
+                }
+                //------------------End---------------------------
+                Snackbar.Add("Inspector Assigned successfully.", Severity.Success);
+                IsError = false;
+            }
+            else
+            {
+                IsError = true;
+                await DialogService.ShowMessageBox("Error!", res1.responseMessage!);
+            }
+        }
+        else
+        {
+            Snackbar.Add($"Please select a valid Inspector.", Severity.Warning);
+        }
+    }
+
+    private async Task FreezeQA(string details)
+    {
+        var doi = rows.Select(a => a.QA_ASSIGNED_DOI).First();
+        AssignInspectorFreezeRequest reqObj = new AssignInspectorFreezeRequest()
+        {
+            IsFreeze = true,
+            CreatedBy = _CurrentUser.UserId,
+            QA_ASSIGNED_DOI = doi,
+            Details = details
+
+        };
+
+        var res1 = await ApiMasterService.CallingAPI<GenRes, AssignInspectorFreezeRequest>(AllApiNames.ASSIGN_INSPECTOR_FREEZE!, reqObj);
+        if (res1.responseCode.Equals(0))
+        {
+            Snackbar.Add("Inspector Assigned freez successfully.", Severity.Success);
+            IsError = false;
+        }
+        else
+        {
+            IsError = true;
+            await DialogService.ShowMessageBox("Error!", res1.responseMessage!);
+        }
+    }
+
+}
+
+
+<style>
+
+    .mud-dialog-title {
+        color: white !important;
+        background: linear-gradient(to right, #0e6cb1, #ffffff) !important;
+    }
+
+    .mud-dialog-actions {
+        background: linear-gradient(to right, #3b7ed12b, #ffffff) !important
+    }
+
+    .bg-finalized {
+        background-color: #FFF3E0 !important;
+    }
+
+</style>

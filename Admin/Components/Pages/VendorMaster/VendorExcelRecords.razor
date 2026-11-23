@@ -1,0 +1,504 @@
+﻿@inherits QpsPageBase
+@page "/VendorOnBoarding"
+@using Admin.Components.Pages.UserMaster
+@using Admin.Components.Shared
+@using Admin.Components.UIControls
+@using Admin.Components.UIControls.BaseComponents
+@using Application.Interfaces.V1.Notifications
+@using Application.Notifications
+@using EmailService.Models
+@attribute [Authorize(Policy = "VendorMgtAccess")]
+@inject IFetchMasterList _fetchMasterList
+@inject INotifier<VendorAccountModel> VendorNotifier
+<MudGrid Class="justify-end">
+    <MudItem>
+        <MudBreadcrumbs Items="_items">
+            <ItemTemplate Context="item">
+                <MudLink Href="@item.Href">@item.Text.ToUpper()</MudLink>
+            </ItemTemplate>
+        </MudBreadcrumbs>
+    </MudItem>
+</MudGrid>
+@if (_CurrentUser.IsQAAdmin || _CurrentUser.IsQAM)
+{
+    <MudStack Row="true" AlignItems="AlignItems.End" Justify="Justify.FlexEnd" Class="mb-2">
+        <MudTooltip Text="Vendor onboard by excel upload.">
+            <MudButton OnClick="OpenUploadDialog" StartIcon="@Icons.Material.Filled.UploadFile" Variant="Variant.Filled" Color="Color.Success">
+                Upload an Excel file
+            </MudButton>
+        </MudTooltip>
+
+    </MudStack>
+    <MudSpacer />
+    <MudChip T="string" Variant="Variant.Outlined" Color="Color.Secondary">Excel History - [ Total Records : @ExcelsHistory.Count ]</MudChip>
+    <MudTable T="VendorExcelModel" Items="ExcelsHistory" @ref="mudTable" Dense="true" FixedHeader="true" Height="150px">
+        <HeaderContent>
+            <MudTh>SNo.</MudTh>
+            <MudTh>Excel</MudTh>
+            <MudTh>Upload On</MudTh>
+            <MudTh>Upload By</MudTh>
+            <MudTh>No Of Records</MudTh>
+            <MudTh>Invalid Records</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd> @((mudTable.CurrentPage * mudTable.RowsPerPage) + ExcelsHistory.IndexOf(context) + 1)</MudTd>
+            <MudTd>
+                @if (!string.IsNullOrEmpty(context.EXCEL_FILE))
+                {
+                    <MudChip T="string" Color="Color.Info" OnClick="() => Download_Click(context.EXCEL_FILE)" Variant="Variant.Text"> @(context.EXCEL_FILE)</MudChip>
+                }
+            </MudTd>
+            <MudTd>@(context.DATE_OF_UPLOAD)</MudTd>
+            <MudTd>@(context.EMP_NAME)~@(context.EMP_CODE)</MudTd>
+            <MudTd>@(context.NO_OF_RECORDS)</MudTd>
+            <MudTd>
+                <MudButton OnClick="() => OpenRoleDialog(context)" Color="Color.Secondary" Variant="Variant.Text">
+                    @(context.NO_INCORRECT_RECORDS)
+                </MudButton>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>No matching records found</MudText>
+        </NoRecordsContent>
+        <LoadingContent>
+            <MudText>Loading...</MudText>
+        </LoadingContent>
+        <PagerContent>
+            <MudTablePager PageSizeOptions="@pageSizeOptions" />
+        </PagerContent>
+    </MudTable>
+}
+<MudSpacer />
+
+<MudChip T="string" Variant="Variant.Outlined" Color="Color.Secondary">To be approved vendor list - [ @Vendors.Count ] </MudChip>
+<MudTable T="VendorExcelDataModel" Items="Vendors" @ref="mudTableD" Dense="true" FixedHeader="true" Height="300px">
+    <HeaderContent>
+        <MudTh>
+            <MudCheckBox T="bool" Value="@(Vendors.All(v => v.IsSelected))" ValueChanged=OnSelectAllChanged />
+        </MudTh>
+        <MudTh>SNo.</MudTh>
+        <MudTh>Vendor Code</MudTh>
+        <MudTh>Vendor Email</MudTh>
+        <MudTh>Date Created</MudTh>
+        <MudTh>Confirmed</MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh>Approver</MudTh>
+        <MudTh>Approval Date</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>
+            <MudCheckBox T="bool" @bind-Value="context.IsSelected" />
+        </MudTd>
+        <MudTd> @((mudTableD.CurrentPage * mudTableD.RowsPerPage) + Vendors.IndexOf(context) + 1)</MudTd>
+        <MudTd>@context.VENDOR_CODE  </MudTd>
+        <MudTd>@(context.EMAIL_IDS)</MudTd>
+        <MudTd>@(context.DATE_CREATED)</MudTd>
+        <MudTd>
+            <MudChip T="string" Color="@(context.IS_CONFIRMED? Color.Success: Color.Error)">
+                @(context.IS_CONFIRMED ? "Yes" : "No")
+            </MudChip>
+        </MudTd>
+        <MudTd>
+            <MudSelect T="int" Dense="true" ReadOnly="@context.IS_CONFIRMED" @bind-Value="context.CM_STATUS_ID" Required="true">
+                <MudSelectItem Value="0">
+                    --Select--
+                </MudSelectItem>
+                @foreach (var item in StatusList)
+                {
+                    <MudSelectItem Value="@item.Master_ID">
+                        @( $"{item.Master_Name}")
+                    </MudSelectItem>
+                }
+            </MudSelect>
+
+        </MudTd>
+        <MudTd>@(context.CMNAME)</MudTd>
+        <MudTd>@(context.CM_DATE)</MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>No matching records found</MudText>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading...</MudText>
+    </LoadingContent>
+    <PagerContent>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="w-100">
+            <MudTablePager PageSizeOptions="@pageSizeOptions" />
+            @if (_CurrentUser.IsQAM)
+            {
+                <MudButton Disabled="@(!Vendors.Any(v => v.IsSelected))" Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit_New">
+                    Update List (<MudText Typo="Typo.subtitle2">@Vendors.Count(v => v.IsSelected)</MudText>)
+                </MudButton>
+            }
+        </MudStack>
+    </PagerContent>
+</MudTable>
+<Loader IsVisible="@IsLoading" />
+
+<MudSpacer />
+<MudChip T="string" Variant="Variant.Outlined" Color="Color.Secondary">Approved vendor list - [ @VendorA.Count ] </MudChip>
+<MudTable T="VendorExcelDataModel" Items="VendorA" @ref="mudTableA" Dense="true" FixedHeader="true" Height="300px">
+    <HeaderContent>
+        <MudTh>SNo.</MudTh>
+        <MudTh>Vendor Code</MudTh>
+        <MudTh>Vendor Email</MudTh>
+        <MudTh>Date Created</MudTh>
+        <MudTh>Confirmed</MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh>Approver</MudTh>
+        <MudTh>Approval Date</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd> @((mudTableA.CurrentPage * mudTableA.RowsPerPage) + VendorA.IndexOf(context) + 1)</MudTd>
+        <MudTd>@context.VENDOR_CODE</MudTd>
+        <MudTd>@(context.EMAIL_IDS)</MudTd>
+        <MudTd>@(context.DATE_CREATED)</MudTd>
+        <MudTd>
+            <MudChip T="string" Color="@(context.IS_CONFIRMED? Color.Success: Color.Error)">
+                @(context.IS_CONFIRMED ? "Yes" : "No")
+            </MudChip>
+        </MudTd>
+        <MudTd>
+            <MudSelect T="int" Dense="true" ReadOnly="@context.IS_CONFIRMED" @bind-Value="context.CM_STATUS_ID" Required="true">
+                <MudSelectItem Value="0">
+                    --Select--
+                </MudSelectItem>
+                @foreach (var item in StatusList)
+                {
+                    <MudSelectItem Value="@item.Master_ID">
+                        @( $"{item.Master_Name}")
+                    </MudSelectItem>
+                }
+            </MudSelect>
+
+        </MudTd>
+        <MudTd>@(context.CMNAME)</MudTd>
+        <MudTd>@(context.CM_DATE)</MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>No matching records found</MudText>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading...</MudText>
+    </LoadingContent>
+    <PagerContent>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="w-100">
+            <MudTablePager PageSizeOptions="@pageSizeOptions" />
+        </MudStack>
+    </PagerContent>
+</MudTable>
+
+
+
+@code {
+    [Inject] private VendorResolver VendorResolver { get; set; } = default!;
+    bool IsLoading = false;
+    private bool selectAll = false;
+    private bool checkedValue = false;
+
+    private List<string> ErrorList = new();
+
+    private async Task OnSelectAllChanged(bool value)
+    {
+        selectAll = value;
+
+        foreach (var item in Vendors.Where(v => !v.IS_CONFIRMED || v.CM_STATUS_ID != 1))
+        {
+            item.IsSelected = value;
+        }
+    }
+
+    private SelectListReq selectListReq = new();
+    private List<Vendor> filteredVendor = new();
+    private List<Vendor> pagedVendors = new(); // Users to be shown on the current page
+    private MudTable<VendorExcelModel> mudTable;
+    private MudTable<VendorExcelDataModel> mudTableD;
+
+    public List<VendorExcelModel> ExcelsHistory { get; set; } = new();
+    public List<VendorExcelDataModel> Vendors { get; set; } = new();
+
+    private MudTable<VendorExcelDataModel> mudTableA;
+    public List<VendorExcelDataModel> VendorA { get; set; } = new();
+
+    public List<MasterData> StatusList { get; set; } = new();
+    private string searchQuery = string.Empty;
+    private int pageSize => 50; // Items per page
+    private int[] pageSizeOptions => new[]
+    {
+        pageSize * 1,
+        pageSize * 2,
+        pageSize * 3,
+        pageSize * 4,
+        pageSize * 5
+    };
+    private int currentPage = 0; // Current page index
+
+    private Modules modules;
+    private List<BreadcrumbItem> _items = new List<BreadcrumbItem>
+    {
+        new BreadcrumbItem("Home", href: "/V1/Login2BsrAccount"),
+        new BreadcrumbItem("Vendor Onboarding", href: "#", disabled: true)
+    };
+
+    protected override async Task OnUserInitializedAsync()
+    {
+        await GetVendors();
+        await GetCMStatus();
+    }
+
+
+    private async Task GetCMStatus()
+    {
+        var res = (await _fetchMasterList.FetchMasterList(CmdNames.Get_CM_Status)).masterDataList;
+        if (res.Count > 0)
+        {
+            StatusList = res;
+        }
+        else
+        {
+            Snackbar.Add("Master no found.", Severity.Error);
+        }
+    }
+
+    private async Task GetVendors()
+    {
+        pagedVendors = new();
+        selectListReq.Id = _CurrentUser.UserId;
+        if (_CurrentUser.IsQAAdmin)
+            selectListReq.StrField = "All";
+
+        selectListReq.Cmd = CmdNames.Get_Vendor_Excel_Data;
+        var res = await ApiMasterService.CallingAPI<GetVendorExcelData, SelectListReq>(AllApiNames.GET_VENDOR_EXCEL_DATA, selectListReq);
+        if (res.responseCode == 0)
+        {
+            if (res.Vendors == null)
+            {
+                Snackbar.Add("No record found.", Severity.Error);
+            }
+            else
+            {
+                ExcelsHistory = res.ExcelsHistory;
+                Vendors = res.Vendors.Where(x => x.CM_STATUS_ID != 1 || !x.IS_CONFIRMED).OrderBy(a => a.DATE_CREATED).ToList();
+                VendorA = res.Vendors.Where(x => x.CM_STATUS_ID == 1 && x.IS_CONFIRMED).OrderBy(a => a.DATE_CREATED).ToList();
+            }
+        }
+        else
+        {
+            Snackbar.Add(res.responseMessage!, Severity.Error);
+        }
+    }
+    private void OnSearchChanged(string searchQuery)
+    {
+        this.searchQuery = searchQuery;
+        FilterRoles(); // Apply search filter
+    }
+    private void FilterRoles()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            filteredVendor = pagedVendors; // Show all Users if search is empty
+        }
+        else
+        {
+            filteredVendor = pagedVendors
+                .Where(role => role.VendorCode!.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                       role.VendorName!.ToString().Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                       role.VendorAddresses.Any()!.ToString().Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            ApplyPaging(); // Re-apply pagination after search
+        }
+    }
+    private void ApplyPaging()
+    {
+        var startIndex = currentPage * pageSize;
+        filteredVendor = filteredVendor.Skip(startIndex).Take(pageSize).ToList(); // Paginate the filtered Users
+    }
+    private void OnPageChanged(int newPage)
+    {
+        currentPage = newPage;
+        ApplyPaging(); // Update paged users when the page is changed
+    }
+    private async Task OpenRoleDialog(VendorExcelModel? user = null)
+    {
+        var parameters = new DialogParameters
+        {
+            { "ExcelData",  user  }
+        };
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Large, FullWidth = true };
+
+        var dialog = DialogService.Show<ViewVendorExcelDetails>("Excel Data Validation Details", parameters, options);
+
+        var result = await dialog.Result;
+
+    }
+
+    private async Task OpenActionDialog(VendorExcelDataModel? user = null)
+    {
+        var parameters = new DialogParameters
+        {
+            { "_vendor",  user  },
+            { "IsEditMode", user != null }
+        };
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Large, FullWidth = true };
+
+    }
+    private async Task OpenUploadDialog()
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<UploadVendorData>("File Upload Dialog", options);
+        var res = await dialog.Result;
+        await GetVendors();
+    }
+    private async Task ShowErrorDialog(string message)
+    {
+        await DialogService.ShowMessageBox(title: "Error", markupMessage: (MarkupString)message, yesText: "OK");
+    }
+
+    private void Download_Click(string fileName)
+    {
+        if (!string.IsNullOrEmpty(fileName))
+            NavigationManager.NavigateTo($"Excel/VendorOnboard/{fileName}", true);
+    }
+
+    private async Task Submit_New()
+    {
+        ErrorList = new();
+        var selectedVendors = Vendors.Where(v => v.IsSelected && !v.IS_CONFIRMED && v.CM_STATUS_ID > 0).ToList();
+
+        if (!selectedVendors.Any())
+        {
+            Snackbar.Add("Please select at least one vendor.", Severity.Warning);
+            return;
+        }
+
+        bool? dres = await DialogService.ShowMessageBox("Confirmation", $"Update {selectedVendors.Count} selected vendor(s)?", yesText: "Yes", cancelText: "No");
+
+        if (dres != true) return;
+
+        UpdateCM_Status_Details _vendorDetails = new() { USER_ID = _CurrentUser.UserId };
+
+        foreach (var item in selectedVendors)
+        {
+            _vendorDetails.Data.Add(new CM_Status_Details
+            {
+                VendorCode = item.VENDOR_CODE,
+                StatusID = item.CM_STATUS_ID,
+                EmailId = item.EMAIL_IDS
+            });
+        }
+
+        foreach (var item in _vendorDetails.Data)
+        {
+            if (item.StatusID == 1)// Approved.  find the vendor in local db or SAP and save in db and send email to them.
+            {
+                await OnFindClick(new Vendor
+                {
+                    VendorCode = item.VendorCode,
+                    DefaultEmailId = item.EmailId
+                });
+            }
+            else
+            {
+                var single = new UpdateCM_Status_Details
+                {
+                    USER_ID = _CurrentUser.UserId,
+                    Data = new List<CM_Status_Details> { item }
+                };
+
+                var res = await ApiMasterService.CallingAPI<GenRes, UpdateCM_Status_Details>(AllApiNames.UPDATE_CM_STATUS!, single);
+
+                if (res.responseCode != 0)
+                    ErrorList.Add(res.responseMessage!);
+                else
+                    ErrorList.Add($"Vendor Code( {item.VendorCode} ) have been rejected.");
+
+            }
+        }
+
+        await GetVendors();
+
+        await DialogService.ShowMessageBox("Information", $"{string.Join("\n", ErrorList)}", yesText: "OK"); //$"Items:\n{string.Join("\n", list)}"
+
+    }
+
+    private async Task OnFindClick(Vendor _vendor)
+    {
+        string vendorcode = _vendor.VendorCode;
+        if (!string.IsNullOrEmpty(vendorcode))
+        {
+            var result = await VendorResolver.ResolveAsync(vendorcode);
+
+            if (result.Found)
+            {
+                _vendor = result.Vendor!;
+                await Save(_vendor);
+                return;
+            }
+            else
+            {
+                ErrorList.Add(result.ErrorMessage ?? "Vendor not found.");
+            }
+        }
+        else
+        {
+            ErrorList.Add($"Warning! Please enter a valid Vendor Code.");
+        }
+    }
+
+    private async Task Save(Vendor _vendor)
+    {
+
+        _vendor.CreatedBy = _CurrentUser.UserId;
+        _vendor.IsActive = true;
+
+        var randomPassword = _passwordHasher.GenerateRandomPassword(8);
+        _vendor.PassWord = _passwordHasher.HashPassword(randomPassword);
+
+        //--Email Sending start
+        bool sent = await VendorNotifier.NotifyAsync(new VendorAccountModel(_vendor, randomPassword, IsUpdate: false, DefaultEmailId: _vendor.DefaultEmailId)); 
+        _vendor.IsSentEmail = sent;
+
+        var res1 = await ApiMasterService.CallingAPI<GenRes, Vendor>(AllApiNames.SET_VENDOR!, _vendor);
+        if (res1.responseCode.Equals(0))
+        {
+            ErrorList.Add($"{_vendor.VendorName}({_vendor.VendorCode}), onboard successfully.");
+        }
+        else
+        {
+            ErrorList.Add($"Error! {res1.responseMessage!}");
+        }
+    }
+}
+
+<style>
+    .mud-table-container {
+        max-height: 48vh;
+    }
+</style>
+<style>
+    .mud-breadcrumbs {
+        padding: 12px 12px;
+    }
+
+    /* Target MudTable header row */
+    .mud-table thead tr th {
+        background-color: #ed008b !important;
+        color: #ffffff !important;
+        font-weight: bold !important;
+    }
+
+    .mud-table-cell {
+        padding-inline-start: 5px !important;
+        padding-inline-end: 5px !important;
+    }
+
+    .highlight {
+        background-color: yellow;
+        color: darkblue;
+        font-weight: bold;
+    }
+
+</style>
+
+

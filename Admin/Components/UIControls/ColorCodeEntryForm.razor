@@ -1,0 +1,92 @@
+﻿@using System.Text.RegularExpressions
+@using Admin.Components.Shared
+@using System.Security.Claims
+@using Application.Interfaces.V1.User
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="form">
+            <MudGrid>
+
+                <MudItem xs="12" md="12">
+                    <MudChip T="string" Variant="Variant.Outlined" Color="Color.Secondary">Hierarchy Details </MudChip>
+                </MudItem>
+                <MudItem xs="12" md="12">
+                    <MudTextField T="string" Label="Color Name" @bind-Value="Dto.ColorCode" Required="true" MaxLength="50" />
+                </MudItem>
+                <MudItem xs="12" md="12">
+                    <MudTextField T="string" Label="Description" @bind-Value="Dto.Description"  MaxLength="100" />
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudTextField T="int" Label="Order" @bind-Value="Dto.OrderNo" Required="true" MaxLength="2" />
+                </MudItem>
+                <MudItem xs="12" md="9">
+                    <MudSwitch T="bool" Label="Is Active?" @bind-Value="Dto.Active" Color="Color.Secondary" />
+                </MudItem>
+
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Save</MudButton>
+        <MudButton Color="Color.Secondary" Variant="Variant.Filled" OnClick="Cancel">Cancel</MudButton>
+    </DialogActions>
+</MudDialog>
+<Loader IsVisible="@IsLoading" />
+
+@code {
+   
+    bool IsLoading = false;
+    private MudForm form;
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+    [Parameter]
+    public MasterColorCodeDto Dto { get; set; } = new();
+    [Parameter]
+    public bool IsEdit { get; set; }
+    public VendorDetail Vendor { get; set; } = new();
+   
+    private async Task<bool> IsValidate()
+    {
+        bool isPass = true;
+
+        if (string.IsNullOrEmpty(Dto.ColorCode))
+        {
+            await DialogService.ShowMessageBox("Validation", "Color Code is required");
+            isPass = false;
+        }
+
+        return isPass;
+
+    }
+
+    private async Task Submit(MouseEventArgs args)
+    {
+        await form.Validate();
+
+        if (form.IsValid)
+        {
+            var validated = await IsValidate();
+            if (validated)
+            {
+
+                if (IsEdit) { Dto.Action = "UPDATE"; } else { Dto.Action = "INSERT"; }
+                var res1 = await ApiMasterService.CallingAPI<GenRes, MasterColorCodeDto>(AllApiNames.ADDEDIT_COLORCODE!, Dto);
+                if (res1.responseCode.Equals(0))
+                {
+                    Snackbar.Add("Record saved successfully.", Severity.Success);
+                    MudDialog?.Close(DialogResult.Ok(res1.recordId));
+                }
+                else
+                {
+                    await DialogService.ShowMessageBox("Error!", res1.responseMessage!);
+                }
+            }
+        }
+    }
+
+    private void Cancel()
+    {
+        MudDialog?.Cancel();
+    }
+}

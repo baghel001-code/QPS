@@ -1,0 +1,320 @@
+﻿@using Admin.Components.Account
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Http
+@implements IDisposable
+<MudNavMenu Class="f18" Bordered="true" Color="Color.Secondary">
+    @if (!_initialized || modules == null)
+    {
+        <MudNavLink Disabled="true">Loading...</MudNavLink>
+    }
+    else
+    {
+        <MudNavGroup Title="@UserName">
+        </MudNavGroup>
+        @if (isQAM || isQAAdmin || IsMerchandiser || isQA || IsVendor || isACH || isACH || isBuyer)
+        {
+            <MudNavGroup Title="Inspection Requests">
+                @if (isQAM || isQAAdmin || IsMerchandiser)
+                {
+                    <MudNavLink Href="/AllRecPenOngInspections" Match="NavLinkMatch.All">All</MudNavLink>
+                    <MudNavLink Href="/InspectionList" Match="NavLinkMatch.All">Received</MudNavLink>
+                    <MudNavLink Href="/OngoingInspections" Match="NavLinkMatch.All">Ongoing</MudNavLink>
+                    <MudNavLink Href="/PendingInspectionListNew" Match="NavLinkMatch.All">Pending</MudNavLink>
+                    <MudNavLink Href="/InspectionsReportNew" Match="NavLinkMatch.All">Report</MudNavLink>
+                    <MudNavLink Href="/CanceledInspections" Match="NavLinkMatch.All">Cancelled</MudNavLink>
+                    <MudNavGroup Title="ASN">
+                        <MudNavLink Href="/AsnGenList" Match="NavLinkMatch.All">ASN Generated</MudNavLink>
+                    </MudNavGroup>
+                }
+                @if (isQAAdmin)
+                {
+                    <MudNavLink Href="/bulk-download" Match="NavLinkMatch.All">Bulk DownLoad</MudNavLink>
+                }
+
+                @if (isQA)
+                {
+                    <MudNavLink Href="/OngoingInspections" Match="NavLinkMatch.All">Ongoing</MudNavLink>
+                    <MudNavLink Href="/PendingInspectionListNew" Match="NavLinkMatch.All">Pending</MudNavLink>
+                    <MudNavLink Href="/InspectionsReportNew" Match="NavLinkMatch.All">Report</MudNavLink>
+                    <MudNavLink Href="/FailedInspections" Match="NavLinkMatch.All">Failed</MudNavLink>
+                }
+
+                @if (IsVendor)
+                {
+                    <MudNavLink Href="/AllRecPenOngInspections" Match="NavLinkMatch.All">All</MudNavLink>
+                    <MudNavLink Href="/InspectionList" Match="NavLinkMatch.All">Submitted</MudNavLink>
+                    <MudNavLink Href="/PendingInspectionListNew" Match="NavLinkMatch.All">Pending</MudNavLink>
+                    <MudNavLink Href="/InspectionsReportNew" Match="NavLinkMatch.All">Report</MudNavLink>
+                    <MudNavLink Href="/CanceledInspections" Match="NavLinkMatch.All">Cancelled</MudNavLink>
+                    <MudNavLink Href="/AsnGenList" Match="NavLinkMatch.All">ASN Generated</MudNavLink>
+                }
+                @if (isACH || isACH || isBuyer)
+                {
+                    <MudNavLink Href="/AllRecPenOngInspections" Match="NavLinkMatch.All">All</MudNavLink>
+                    <MudNavLink Href="/InspectionList" Match="NavLinkMatch.All">Submitted</MudNavLink>
+                    <MudNavLink Href="/PendingInspectionListNew" Match="NavLinkMatch.All">Pending</MudNavLink>
+                    <MudNavLink Href="/InspectionsReportNew" Match="NavLinkMatch.All">Report</MudNavLink>
+                    <MudNavLink Href="/CanceledInspections" Match="NavLinkMatch.All">Cancelled</MudNavLink>
+                    <MudNavLink Href="/AsnGenList" Match="NavLinkMatch.All">ASN Generated</MudNavLink>
+                }
+
+            </MudNavGroup>
+        }
+        @if (IsASN)
+        {
+            <MudNavGroup Title="ASN">
+                <MudNavLink Href="/AsnReqList" Match="NavLinkMatch.All">ASN Request</MudNavLink>
+                <MudNavLink Href="/AsnGenList" Match="NavLinkMatch.All">ASN Generated</MudNavLink>
+            </MudNavGroup>
+        }
+        @if (isQAAdmin)
+        {
+            <MudNavGroup Title="Audit Requests">
+                <MudNavLink Href="/NewAuditRequests" Match="NavLinkMatch.All">New Vendor(s)</MudNavLink>
+                <MudNavLink Href="/OldAuditRequests" Match="NavLinkMatch.All">Old Vendor(s)</MudNavLink>
+
+            </MudNavGroup>
+        }
+
+        @if (isQAAdmin || isAdmin || isBuyer || isQC || isView || IsMerchandiser)
+        {
+            <MudNavGroup Title="PPS">
+                <MudNavLink Href="/pps-list">PPS Requests</MudNavLink>
+            </MudNavGroup>
+
+        }
+        @if (isQAM || isQAAdmin)
+        {
+            <MudNavGroup Title="Vendor Management">
+                <MudNavLink Href="/VendorOnBoarding" Match="NavLinkMatch.All">Vendor Onboard</MudNavLink>
+                <MudNavLink Href="/resetpassword" Match="NavLinkMatch.All">Reset Password</MudNavLink>
+            </MudNavGroup>
+
+        }
+        @if (isQAAdmin)
+        {
+            <MudNavGroup Title="Master Data">
+                <MudNavLink Href="/emailList" Match="NavLinkMatch.All">Email Management</MudNavLink>
+                <MudNavLink Href="/colorCodeList" Match="NavLinkMatch.All">Color Codes</MudNavLink>
+                <MudNavLink Href="/QAMaster" Match="NavLinkMatch.All">QA Location</MudNavLink>
+                <MudNavLink Href="/HierarchyList" Match="NavLinkMatch.All">Hierarchy</MudNavLink>
+
+            </MudNavGroup>
+        }
+        @if (modules.User_Management)
+        {
+            <MudNavGroup Title="Settings">
+                <MudNavLink Href="User-Master" Match="NavLinkMatch.All">User Management</MudNavLink>
+                <MudNavLink Href="Role-Master" Match="NavLinkMatch.All">User Roles</MudNavLink>
+                <MudNavLink Href="/Vendor-Master">Vendor Management</MudNavLink>
+                <MudNavLink Href="/resetpassword" Match="NavLinkMatch.All">Reset Password</MudNavLink>
+            </MudNavGroup>
+            <MudNavGroup Title="Audit Requests">
+                <MudNavLink Href="/NewAuditRequests" Match="NavLinkMatch.All">New Vendor(s)</MudNavLink>
+                <MudNavLink Href="/OldAuditRequests" Match="NavLinkMatch.All">Old Vendor(s)</MudNavLink>
+                <MudNavLink Href="/audit/new" Match="NavLinkMatch.All">Audit Wizard</MudNavLink>
+                <MudNavLink Href="/bulk-download" Match="NavLinkMatch.All">Bulk DownLoad</MudNavLink>
+            </MudNavGroup>
+        }
+        @if (modules.Menu)
+        {
+            @if (menuList == null || !menuList.Any())//@if (!menuList.Any())
+            {
+                var eqs = new EncryptedQueryString();
+                eqs.Add("Page_Id", "0");
+                var linkUrl0 = "Menu-Master?output=" + eqs.ToString();
+                <MudNavLink Href="@linkUrl0" Match="NavLinkMatch.Prefix">Menu</MudNavLink>
+            }
+            else
+            {
+                var eqs = new EncryptedQueryString();
+                eqs.Add("Page_Id", "0");
+                var linkUrl0 = "Menu-Master?output=" + eqs.ToString();
+                <MudNavGroup Title="Menu">
+                    <MudNavLink Href="@linkUrl0" Icon="@Icons.Material.Filled.Edit" IconColor="Color.Inherit"> Edit </MudNavLink>
+
+                    @foreach (var topMenu in menuList.Where(m => m.Parent_Id == 0))
+                    {
+                        @if (menuList.Any(m => m.Parent_Id == topMenu.Id))
+                        {
+                            <RecursiveAdminNavMenu MenuItem="topMenu" AllMenus="menuList" />
+                        }
+                        else
+                        {
+                            var menuUrl = "Menu-Master?output=" + new EncryptedQueryString { { "Page_Id", topMenu.Id.ToString() } };
+                            <MudNavLink Href="@menuUrl" Match="NavLinkMatch.All">@topMenu.Label</MudNavLink>
+                        }
+                    }
+                </MudNavGroup>
+            }
+        }
+        <MudNavLink OnClick="SignOutAsync" Match="NavLinkMatch.All">Logout</MudNavLink>
+       
+    }
+</MudNavMenu>
+<LogoutForm @ref="_logout" />
+
+@code {
+    private LogoutForm? _logout;
+    private Task SignOutAsync() => _logout?.SubmitAsync() ?? Task.CompletedTask;
+    private List<MenusList> ChildMenus { get; set; } = new();
+    private SelectListReq selectListReq { get; set; } = new();
+
+    private string? currentUrl;
+    private Modules? modules = null;         // ✅ nullable
+    private List<MenusList> menuList { get; set; } = new();
+    private bool _initialized = false;       // ✅ guard flag
+    private string? UserName { get; set; }
+
+    private bool isAdmin = false;
+    private bool isBuyer = false;
+    private bool isCM = false;
+    private bool isQAAdmin = false;
+    private bool isQAM = false;
+    private bool isQA = false;
+    private bool IsVendor = false;
+    private bool isQC = false;
+    private bool isView = false;
+    private bool isCH = false;
+    private bool isACH = false;
+    private bool IsMerchandiser = false;
+    private bool IsBFT = false;
+    private bool IsASN = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var context = HttpContextAccessor.HttpContext;
+            if (context != null)
+            {
+                UserName = context.User.Identity?.Name;
+                isAdmin = context.User.IsInRole("1");
+                isQAAdmin = context.User.IsInRole("1008");
+                isQAM = context.User.IsInRole("1007");
+                isQA = context.User.IsInRole("1006");
+                IsVendor = context.User.IsInRole("Vendor");
+                isBuyer = context.User.IsInRole("2");
+                isCM = context.User.IsInRole("1009");
+                isQC = context.User.IsInRole("3");
+                isView = context.User.IsInRole("4");
+                isCH = context.User.IsInRole("1010");
+                isACH = context.User.IsInRole("1011");
+                IsMerchandiser = context.User.IsInRole("1012");
+                IsBFT = context.User.IsInRole("1013");
+                IsASN = context.User.IsInRole("1014");
+            }
+
+            modules = await MenuService.GetModules() ?? new Modules();
+
+            selectListReq.Cmd = CmdNames.Get_Menu_List;
+
+            var res1 = await ApiMasterService.CallingAPI<GetMenuListRes, SelectListReq>(
+                AllApiNames.GET_MENUS_LIST!, selectListReq);
+
+            menuList = res1.responseCode == 0 && res1.menusLists != null
+                ? res1.menusLists
+                : new List<MenusList>();
+
+            NavMenuService.UpdateMenuList(menuList);
+
+            // Subscribe AFTER data is ready
+            NavMenuService.OnMenuChanged += OnMenuChangedAsync;
+
+            _initialized = true;
+        }
+        catch (HttpRequestException httpEx)
+        {
+            // API / network failure
+            Snackbar.Add($"Network error: {httpEx.Message}", Severity.Error);
+            menuList = new List<MenusList>();
+            modules = new Modules();
+            _initialized = false;
+        }
+        catch (UnauthorizedAccessException authEx)
+        {
+            // User context / auth failure
+            Snackbar.Add($"Access denied: {authEx.Message}", Severity.Warning);
+            _initialized = false;
+        }
+        catch (Exception ex)
+        {
+            // Catch-all for anything unexpected
+            Snackbar.Add($"Something went wrong: {ex.Message}", Severity.Error);
+            menuList = new List<MenusList>();
+            modules = new Modules();
+            _initialized = false;
+        }
+        finally
+        {
+            // Always runs — safe place for loading spinner off, cleanup, etc.
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task OnMenuChangedAsync()
+    {
+        try
+        {
+            menuList = NavMenuService.MenuList ?? new List<MenusList>();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Menu refresh failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private List<MenusList> GetChildMenus(int parentId)
+    {
+        try
+        {
+            return NavMenuService.MenuList?.Where(m => m.Parent_Id == parentId).ToList()
+                   ?? new List<MenusList>();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load child menus: {ex.Message}", Severity.Error);
+            return new List<MenusList>();
+        }
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        try
+        {
+            currentUrl = NavigationManager.ToBaseRelativePath(e.Location);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Navigation error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            NavigationManager.LocationChanged -= OnLocationChanged;
+            NavMenuService.OnMenuChanged -= OnMenuChangedAsync;
+        }
+        catch (Exception ex)
+        {
+            // Silent log — Dispose should never throw or show UI errors app-shell.css
+            Console.Error.WriteLine($"Dispose error: {ex.Message}");
+        }
+    }
+}
+
+<style>
+    .mud-icon-root.mud-svg-icon {
+        fill: white !important;
+    }
+
+    @@media (max-width: 767.98px) {
+        .mud-icon-root.mud-svg-icon {
+            fill: deeppink !important;
+        }
+    }
+</style>   

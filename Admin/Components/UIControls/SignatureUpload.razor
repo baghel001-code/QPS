@@ -1,0 +1,143 @@
+﻿@using SixLabors.ImageSharp
+@using SixLabors.ImageSharp.Formats.Png
+@using SixLabors.ImageSharp.PixelFormats
+@using SixLabors.ImageSharp.Processing
+@inject ISnackbar Snackbar
+
+
+<MudPaper Class="pa-4" Elevation="0">
+    <MudText Typo="Typo.subtitle1" Class="mb-2">Signature</MudText>
+
+    @if (_previewBase64 is not null)
+    {
+        <div class="d-flex align-center mb-2" style="gap:16px;">
+            <img src="data:image/png;base64,@_previewBase64" style="max-width:200px; max-height:80px; border:1px solid #ddd; background:#fff;" />
+        </div>
+        <div class="d-flex align-center mb-2" style="gap:16px;">
+            <MudText Typo="Typo.caption">@(_compressedSizeKb.ToString("0.0")) KB</MudText>
+        </div>
+    }
+
+    <InputFile OnChange="OnFileSelected" accept="image/png,image/jpeg" class="d-none" id="sigFileInput" />
+
+    <MudButton Variant="Variant.Outlined"
+               StartIcon="@Icons.Material.Filled.Draw"
+               HtmlTag="label"
+               for="sigFileInput"
+               Disabled="_isProcessing">
+        @(_previewBase64 is null ? "Upload Signature" : "Replace Signature")
+    </MudButton>
+
+    @if (_isProcessing)
+    {
+        <MudProgressCircular Size="MudBlazor.Size.Small" Indeterminate="true" Class="ms-2" />
+    }
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <MudText Typo="Typo.caption" Color="MudBlazor.Color.Error" Class="mt-1">@_error</MudText>
+    }
+</MudPaper>
+
+@code {
+    [Parameter] public int UserId { get; set; }
+    [Parameter] public byte[]? SignatureBytes { get; set; }
+    [Parameter] public EventCallback<byte[]> OnSignatureSaved { get; set; }
+
+    private string? _previewBase64;
+    private double _compressedSizeKb;
+    private bool _isProcessing;
+    private string? _error;
+
+
+
+
+    private const long MaxUploadBytes = 15 * 1024 ; // 10 KB raw upload cap
+    private const int TargetKb = 10;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (SignatureBytes!=null)
+        {
+            _previewBase64 = Convert.ToBase64String(SignatureBytes);
+            _compressedSizeKb = SignatureBytes.Length / 1024.0;
+        }
+
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _error = null;
+        var file = e.File;
+
+        if (file is null) return;
+
+        if (file.Size > MaxUploadBytes)
+        {
+            _error = "File too large. Please choose an image under 10 KB.";
+            return;
+        }
+
+        _isProcessing = true;
+        StateHasChanged();
+
+        try
+        {
+            using var stream = file.OpenReadStream(MaxUploadBytes);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            var rawBytes = ms.ToArray();
+
+            SignatureBytes = CompressSignature(rawBytes);
+
+            _previewBase64 = Convert.ToBase64String(SignatureBytes);
+            _compressedSizeKb = SignatureBytes.Length / 1024.0;
+
+            await OnSignatureSaved.InvokeAsync(SignatureBytes);
+            
+        }
+        catch (Exception ex)
+        {
+            _error = "Could not process image. Please try a different file.";
+            Snackbar.Add($"Signature upload failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private static byte[] CompressSignature(byte[] source, int maxWidth = 350)
+    {
+        using var image = Image.Load<Rgba32>(source);
+
+        if (image.Width > maxWidth)
+        {
+            image.Mutate(x => x.Resize(new SixLabors.ImageSharp.Processing.ResizeOptions
+            {
+                Size = new SixLabors.ImageSharp.Size(maxWidth, 0),
+                Mode = SixLabors.ImageSharp.Processing.ResizeMode.Max
+            }));
+        }
+
+        var encoder = new PngEncoder
+        {
+            ColorType = PngColorType.Palette,
+            BitDepth = PngBitDepth.Bit8,
+            CompressionLevel = PngCompressionLevel.BestCompression,
+            TransparentColorMode = PngTransparentColorMode.Preserve
+        };
+
+        using var outMs = new MemoryStream();
+        image.Save(outMs, encoder);
+        var bytes = outMs.ToArray();
+
+        if (bytes.Length > TargetKb * 1024 && maxWidth > 150)
+            return CompressSignature(source, maxWidth - 50);
+
+        return bytes;
+    }
+
+    
+}

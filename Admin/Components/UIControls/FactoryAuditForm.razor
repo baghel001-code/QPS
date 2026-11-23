@@ -1,0 +1,820 @@
+﻿@using System.Security.Claims
+@using Admin.Components.Shared
+@using Application.Interfaces.V1.User
+@using Newtonsoft.Json
+@using SixLabors.ImageSharp
+@using SixLabors.ImageSharp.Formats
+@using SixLabors.ImageSharp.Formats.Jpeg
+@using SixLabors.ImageSharp.Formats.Png
+@using SixLabors.ImageSharp.Processing
+@using System.Text.RegularExpressions
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.FactCheck" Class="mr-2" />
+            Factory Audit Report
+        </MudText>
+    </TitleContent>
+
+    <DialogContent>
+        <MudForm @ref="_form" Model="_model" @bind-Errors="_formErrors">
+            <MudGrid>
+                @* ── Section 1: Header ─────────────────────────────── *@
+                <MudItem xs="12">
+                    <MudChip T="string" Variant="Variant.Outlined" Color="MudBlazor.Color.Secondary"><b>Audit Details</b> </MudChip>
+                    @*  <MudGrid>
+
+                        <MudItem xs="12" md="8">
+                            <MudSelect T="int" Label="Business Head" @bind-Value="_model.BusinessHead" Required="true" Validation="@((int value) => value == 0 ? "Please select a business head" : null)">
+                                <MudSelectItem Value="0">
+                                    --Select--
+                                </MudSelectItem>
+                                @foreach (var item in _model.BusinessHeadList)
+                                {
+                                    <MudSelectItem Value="@item.Master_ID">
+                                        @( $"{item.Master_Name}")
+                                    </MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+
+                        <MudItem xs="12" md="4">
+                            <MudDatePicker Label="Audit Date"
+                                           @bind-Date="_model.AuditDate"
+                                           Required="true"
+                                           DateFormat="dd/MM/yyyy" />
+                        </MudItem>
+
+                    </MudGrid> *@
+                </MudItem>
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Save" Color="MudBlazor.Color.Secondary" Variant="Variant.Filled" Disabled="@_isSubmitting" StartIcon="@Icons.Material.Filled.Save">Save</MudButton>
+        <MudButton OnClick="Submit" Color="MudBlazor.Color.Success" Variant="Variant.Filled" Disabled="@_isSubmitting" StartIcon="@Icons.Material.Filled.CheckCircle">Submit</MudButton>
+        <MudButton OnClick="Cancel" Color="MudBlazor.Color.Error" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Cancel">Cancel</MudButton>
+    </DialogActions>
+</MudDialog>
+<Loader IsVisible="@_gstLoading" />
+@code {
+    [Inject] protected ICurrentUserService _CurrentUser { get; set; } = default!;
+    @inject IWebHostEnvironment Env
+    [Inject] protected IFetchMasterList _fetchMasterList { get; set; } = default!;
+    //--File upload section----------------------
+    private const string UploadFolder = "wwwroot/Images/Audit";
+    private const string relPath = "/Images/Audit";
+    private const long MaxFileSize = 10 * 1024 * 1024; // 10MB
+    private List<string> largSizeFiles = new();
+    IList<IBrowserFile> files = new List<IBrowserFile>();
+    private List<string> fileNames = new();
+
+    public class InMemoryBrowserFile : IBrowserFile
+    {
+        private readonly byte[] _fileBytes;
+
+        public InMemoryBrowserFile(byte[] fileBytes, string name, string contentType)
+        {
+            try
+            {
+                if (fileBytes == null || fileBytes.Length == 0)
+                    throw new ArgumentException("File content cannot be null or empty.", nameof(fileBytes));
+
+                if (string.IsNullOrWhiteSpace(name))
+                    throw new ArgumentException("File name cannot be null or empty.", nameof(name));
+
+                if (string.IsNullOrWhiteSpace(contentType))
+                    throw new ArgumentException("Content type cannot be null or empty.", nameof(contentType));
+
+                _fileBytes = fileBytes;
+                Name = name;
+                Size = fileBytes.LongLength;
+                LastModified = DateTimeOffset.Now;
+                ContentType = contentType;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    $"Failed to initialize InMemoryBrowserFile. Error: {ex.Message}", ex);
+            }
+        }
+
+        public DateTimeOffset LastModified { get; }
+
+        public string Name { get; }
+
+        public long Size { get; }
+
+        public string ContentType { get; }
+
+        public Stream OpenReadStream(long maxAllowedSize = 512000, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (_fileBytes == null || _fileBytes.Length == 0)
+                    throw new InvalidOperationException("File data is unavailable.");
+
+                if (_fileBytes.LongLength > maxAllowedSize)
+                {
+                    throw new IOException(
+                        $"File size exceeds the allowed limit of {maxAllowedSize} bytes.");
+                }
+
+                return new MemoryStream(_fileBytes, writable: false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw new IOException(
+                    $"Error while opening file stream for '{Name}'. Error: {ex.Message}", ex);
+            }
+        }
+    }
+    private async Task UploadFiles(IReadOnlyList<IBrowserFile> selectedFiles)
+    {
+        try
+        {
+            const int maxFileCount = 20;
+            const long maxFileSize = 10 * 1024 * 1024; // 10 MB
+
+            if (selectedFiles == null || !selectedFiles.Any())
+            {
+                Snackbar.Add("No files selected.", Severity.Warning);
+                return;
+            }
+
+            if (selectedFiles.Count > maxFileCount)
+            {
+                Snackbar.Add($"You can upload a maximum of {maxFileCount} files at a time.", Severity.Warning);
+                return;
+            }
+
+            // Ensure collections are initialized
+            files ??= new List<IBrowserFile>();
+            largSizeFiles ??= new List<string>();
+
+            // Ensure upload directory exists
+            var uploadsFolder = Path.Combine(Env.WebRootPath, "uploads");
+
+            if (!Directory.Exists(uploadsFolder))
+            {
+                Directory.CreateDirectory(uploadsFolder);
+            }
+
+
+
+            foreach (var file in selectedFiles)
+            {
+                try
+                {
+                    if (file == null)
+                        continue;
+
+                    var ext = Path.GetExtension(file.Name)?.ToLowerInvariant();
+
+                    if (string.IsNullOrWhiteSpace(ext))
+                    {
+                        largSizeFiles.Add(file.Name);
+                        continue;
+                    }
+
+                    var uniqueFileName = $"{Guid.NewGuid()}{ext}";
+                    var filePath = Path.Combine(uploadsFolder, uniqueFileName);
+
+                    // Image Files
+                    if (ext == ".jpg" || ext == ".jpeg" || ext == ".png")
+                    {
+
+                        await using var stream = file.OpenReadStream(maxFileSize);
+
+                        using var image = await Image.LoadAsync(stream);
+
+                        // Resize image if width exceeds 1024px
+                        if (image.Width > 1024)
+                        {
+                            double scale = 1024.0 / image.Width;
+                            int newHeight = (int)(image.Height * scale);
+
+                            image.Mutate(x => x.Resize(1024, newHeight));
+                        }
+
+                        await using var outputStream = new MemoryStream();
+
+                        IImageEncoder encoder = ext switch
+                        {
+                            ".jpg" or ".jpeg" => new JpegEncoder
+                            {
+                                Quality = 80
+                            },
+
+                            ".png" => new PngEncoder
+                            {
+                                CompressionLevel = PngCompressionLevel.Level6
+                            },
+
+                            _ => new JpegEncoder
+                            {
+                                Quality = 80
+                            }
+                        };
+
+                        await image.SaveAsync(outputStream, encoder);
+
+                        long compressedSize = outputStream.Length;
+
+                        if (compressedSize > maxFileSize)
+                        {
+                            largSizeFiles.Add(file.Name);
+                            continue;
+                        }
+
+                        // Reset stream position
+                        outputStream.Position = 0;
+
+                        IBrowserFile compressedFile = new InMemoryBrowserFile(outputStream.ToArray(), file.Name, file.ContentType);
+
+                        files.Add(compressedFile);
+
+                    }
+                    else
+                    {
+
+                        // Non-image files
+                        if (file.Size > maxFileSize)
+                        {
+                            largSizeFiles.Add(file.Name);
+                            continue;
+                        }
+
+                        files.Add(file);
+                    }
+                }
+                catch (IOException ioEx)
+                {
+                    Snackbar.Add($"File error for '{file?.Name}': {ioEx.Message}", Severity.Error);
+                }
+                catch (UnknownImageFormatException)
+                {
+                    Snackbar.Add($"Unsupported image format: {file?.Name}", Severity.Warning);
+                }
+                catch (Exception ex)
+                {
+                    Snackbar.Add($"Error processing file '{file?.Name}': {ex.Message}", Severity.Error);
+                }
+            }
+
+            // Large file warning
+            if (largSizeFiles.Any())
+            {
+                Snackbar.Add($"Some files exceeded the 10 MB limit: {string.Join(", ", largSizeFiles)}", Severity.Warning,
+                    config =>
+                    {
+                        config.VisibleStateDuration = 2000;
+                    });
+            }
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Unexpected error during file upload: {ex.Message}", Severity.Error);
+        }
+    }
+    private void ClearAsync()
+    {
+        try
+        {
+            files?.Clear();
+            largSizeFiles?.Clear();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error while clearing files: {ex.Message}", Severity.Error);
+        }
+    }
+    private void Remove(IBrowserFile item)
+    {
+        try
+        {
+            if (item == null)
+            {
+                Snackbar.Add("Invalid file selected for removal.", Severity.Warning);
+                return;
+            }
+
+            if (files == null)
+            {
+                Snackbar.Add("File collection is not initialized.", Severity.Error);
+                return;
+            }
+
+            bool isRemoved = files.Remove(item);
+
+            if (isRemoved)
+            {
+                largSizeFiles?.Clear();
+                Snackbar.Add($"{item.Name} removed successfully.", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"{item.Name} was not found in the file list.", Severity.Warning);
+            }
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error while removing file: {ex.Message}", Severity.Error);
+        }
+    }
+    private async Task OpenInNewTab(string url)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                Snackbar.Add("Invalid URL.", Severity.Warning);
+                return;
+            }
+
+            await JS.InvokeVoidAsync("open", url, "_blank");
+        }
+        catch (JSException jsEx)
+        {
+            Snackbar.Add($"Unable to open the link. JavaScript error: {jsEx.Message}", Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error while opening the link: {ex.Message}", Severity.Error);
+        }
+    }
+    private async Task OpenFile(IBrowserFile file)
+    {
+        try
+        {
+            if (file == null)
+            {
+                Snackbar.Add("No file selected.", Severity.Warning);
+                return;
+            }
+
+            const long maxFileSize = 10 * 1024 * 1024; // 10 MB
+
+            if (file.Size > maxFileSize)
+            {
+                Snackbar.Add($"File size exceeds the maximum allowed limit of {maxFileSize / (1024 * 1024)} MB.", Severity.Warning);
+                return;
+            }
+
+            await using var stream = file.OpenReadStream(maxFileSize);
+            await using var ms = new MemoryStream();
+
+            await stream.CopyToAsync(ms);
+
+            var bytes = ms.ToArray();
+
+            if (bytes == null || bytes.Length == 0)
+            {
+                Snackbar.Add("File content is empty.", Severity.Warning);
+                return;
+            }
+
+            await JS.InvokeVoidAsync("openFileInNewTab", bytes, file.ContentType);
+
+            //Snackbar.Add($"{file.Name} opened successfully.", Severity.Success);
+        }
+        catch (IOException ioEx)
+        {
+            Snackbar.Add($"File read error: {ioEx.Message}", Severity.Error);
+        }
+        catch (JSException jsEx)
+        {
+            Snackbar.Add($"JavaScript error while opening file: {jsEx.Message}", Severity.Error);
+        }
+        catch (OperationCanceledException)
+        {
+            Snackbar.Add("File operation was cancelled.", Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Unexpected error while opening file: {ex.Message}", Severity.Error);
+        }
+    }
+    //-----------------
+
+    bool IsLoading = false;
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+
+    [Parameter]
+    public VendorAuditFormModel? ExistingModel { get; set; }
+
+
+    [Parameter] public bool IsEditMode { get; set; }
+
+    private VendorAuditFormModel _model = new();
+    private MudForm _form = new();
+    private string[] _formErrors = Array.Empty<string>();
+    private bool _isSubmitting = false;
+    private bool _gstLoading = false;
+    private bool isFatched { get; set; }
+    private string gstPattern = @"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$";
+    List<AuditChecklistItem> CheckListMaster = new();
+    // ─── Lifecycle ────────────────────────────────────────────────
+    protected async override Task OnInitializedAsync()
+    {
+        try
+        {
+            if (ExistingModel == null)
+            {
+                Snackbar.Add("Audit data is missing.", Severity.Error);
+                _model = new();
+                isFatched = false;
+            }
+            else
+            {
+                isFatched = IsEditMode;
+                _model = ExistingModel;
+            }
+            await GetAllMasters();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading audit form: {ex.Message}", Severity.Error);
+            MudDialog?.Close();
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task GetAllMasters()
+    {
+        try
+        {
+            var yesNoMaster = await GetMasterData(CmdNames.Get_YesNo) ?? new List<MasterData>();
+            var businessHeadMaster = await GetMasterData(CmdNames.Get_BUSINESS_HEAD) ?? new List<MasterData>();
+            var auditCheckList = await GetMasterData(CmdNames.GET_AUDTI_CHECKLIST) ?? new List<MasterData>();
+            _model.BusinessHeadList = businessHeadMaster;
+            int sno = 1;
+            foreach (var item in auditCheckList)
+            {
+                CheckListMaster.Add(new() { CheckListMasterId = item.Master_ID, SrNo = sno, Description = item.Master_Name, StatusList = yesNoMaster });
+                sno++;
+            }
+
+            if (ExistingModel != null)
+            {
+                var bLookup = ExistingModel.Checklist.ToDictionary(b => b.CheckListMasterId);
+
+                foreach (var itemA in CheckListMaster)
+                {
+                    if (bLookup.TryGetValue(itemA.CheckListMasterId, out var match))
+                    {
+                        itemA.Status = match.Status;
+                        itemA.ValidityDate = match.ValidityDate;
+                        itemA.Remarks = match.Remarks;
+                    }
+                }
+            }
+
+            _model.BusinessHeadList = businessHeadMaster;
+            _model.Checklist = CheckListMaster;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading master data: {ex.Message}", Severity.Error);
+        }
+    }
+    private async Task<List<MasterData>> GetMasterData(string cmd)
+    {
+        try
+        {
+            IsLoading = true;
+            var result = await _fetchMasterList.FetchMasterList(cmd);
+            IsLoading = false;
+
+            // ✅ Guard: null response
+            return result?.masterDataList ?? new List<MasterData>();
+        }
+        catch (Exception ex)
+        {
+            IsLoading = false;
+            Snackbar.Add($"Error loading {cmd} data: {ex.Message}", Severity.Error);
+            return new List<MasterData>(); // ✅ Never return null
+        }
+    }
+    // ─── GST Lookup ───────────────────────────────────────────────
+    private async Task LookupGst()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_model.GstNumber) || _model.GstNumber.Length != 15)
+            {
+                Snackbar.Add("Please enter a valid 15-digit GST number.", Severity.Warning);
+                return;
+            }
+            if (!Regex.IsMatch(_model.GstNumber.ToUpper(), gstPattern))
+            {
+                Snackbar.Add("Please enter a valid GST number.", Severity.Warning);
+                return;
+
+            }
+
+            _gstLoading = true;
+            await InvokeAsync(StateHasChanged);
+
+            // Prepare request safely
+            var selectRequest = new SelectListReq
+            {
+                Id = 0,
+                Cmd = CmdNames.Get_GST_Details,
+                StrField = _model.GstNumber      // null-safe
+            };
+
+
+            var existingGST = await ApiMasterService.CallingAPI<GSTINLocalDBResponse, SelectListReq>(AllApiNames.GET_GST_DETAILS, selectRequest);
+
+
+            if (existingGST.responseCode == 0 && existingGST.responseMessage!.ToUpper() == "SUCCESS")
+            {
+
+                if (!string.IsNullOrEmpty(existingGST.VENDOR_NAME) && !string.IsNullOrEmpty(existingGST.REGISTERED_ADDRESS))
+                {
+
+                    await ShowErrorDialog("Info", "GST details already exist.");
+
+                    _model.VendorName = existingGST.VENDOR_NAME;
+                    _model.RegisteredAddress = existingGST.REGISTERED_ADDRESS;
+                    _model.GSTApiResponse = existingGST.GST_API_RAW_RESPONSE;
+
+                    return;
+                    //-------------------------
+                }
+            }
+
+            // ✅ Call your GST API here
+            var req = new SAP_API_DATA_Req
+            {
+                Param = _model.GstNumber,  // Ensure no null 09ABKCS6285P1Z8   03AFLPM9444GIZA
+                TaskName = "ALL_CLEAR_TAX"
+            };
+
+            //IsLoading = true;
+            var gstApiData = await ApiMasterService.CallingAPI<ApiData, SAP_API_DATA_Req>(AllApiNames.GET_SAP_API!, req).ConfigureAwait(false);
+            //IsLoading = false;
+
+            if (gstApiData is not null)
+            {
+                // IsLoading = true;
+                var GSTDetails = await ApiMasterService.CallingGSTAPI<GSTINResponse, string>(string.Empty, gstApiData).ConfigureAwait(false);
+                // IsLoading = false;
+                if (GSTDetails != null)
+                {
+                    if (GSTDetails.responseCode == 0 && GSTDetails.responseMessage?.ToUpper() == "SUCCESS")  // Safe and concise
+                    {
+                        if (!string.IsNullOrEmpty(GSTDetails.LegalName))
+                        {
+                            _model.VendorName = GSTDetails.LegalName;
+                            _model.RegisteredAddress = GSTDetails.PrincipalAddress.AddressDetail.FullAddress;
+                            _model.GSTApiResponse = JsonConvert.SerializeObject(GSTDetails, Formatting.Indented);
+                        }
+                    }
+                    else
+                    {
+                        Snackbar.Add(GSTDetails.responseMessage, Severity.Error);
+                    }
+                }
+                else
+                {
+                    Snackbar.Add("GST Details not found.", Severity.Warning);
+                }
+            }
+            else
+            {
+                Snackbar.Add("GST Api not found", Severity.Error);
+                return;
+            }
+
+
+            // ── Simulate for now ──────────────────────────────────
+            await Task.Delay(500);
+            Snackbar.Add("GST lookup completed.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"GST lookup failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _gstLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private string ValidateGST(string gst)
+    {
+        if (string.IsNullOrWhiteSpace(gst))
+            return "GST Number is required";
+
+        return Regex.IsMatch(gst.ToUpper(), gstPattern) ? "" : "Invalid GST Number";
+    }
+
+    // ─── Save (partial save) ──────────────────────────────────────
+    private async Task Save()
+    {
+        if (_isSubmitting) return;
+
+        bool? dres = await DialogService.ShowMessageBox("Confirmation", "Do you want to save Audit details?", yesText: "  Yes!  ", cancelText: "   No   ");
+        if (dres == null)
+        {
+            return;
+        }
+        else
+        {
+
+            await _form.Validate();
+            if (!_form.IsValid)
+            {
+                var html = "<ul style='margin:0; padding-left:16px;'>" + string.Concat(_form.Errors.Select(e => $"<li>{e}</li>")) + "</ul>";
+
+                Snackbar.Add((MarkupString)html, Severity.Error, options =>
+                {
+                    options.RequireInteraction = true;   // stays until user closes
+                });
+
+                return;
+            }
+
+            if (_form.IsValid)
+            {
+                _isSubmitting = true;
+                try
+                {
+                    fileNames = new List<string>();
+                    if (files.Count > 0)
+                    {
+                        var folderPath = Path.Combine(Directory.GetCurrentDirectory(), UploadFolder);
+                        if (!Directory.Exists(folderPath))
+                        {
+                            Directory.CreateDirectory(folderPath);
+                        }
+
+                        foreach (var file in files)
+                        {
+                            var fileName = Guid.NewGuid() + Path.GetExtension(file.Name);
+                            var filePath = Path.Combine(folderPath, fileName);
+                            await using var inputStream = file.OpenReadStream(MaxFileSize); // ← dispose this
+                            await using var fileStream = new FileStream(filePath, FileMode.Create);
+                            await inputStream.CopyToAsync(fileStream);
+                            fileNames.Add(Path.Combine(relPath, fileName).Replace("\\", "/"));
+                        }
+                        ClearAsync();
+                        // ✅ FIX: Append to existing attachments instead of replacing
+                        if (!string.IsNullOrEmpty(_model.GenAttachmentFirst))
+                        {
+                            _model.GenAttachmentFirst += "," + string.Join(",", fileNames);
+                        }
+                        else
+                        {
+                            _model.GenAttachmentFirst = string.Join(",", fileNames);
+                        }
+                    }
+
+                    _model.RequestedBuyerName =_CurrentUser.UserCode;
+                    _model.UserId =_CurrentUser.UserId;
+
+                    var res = await ApiMasterService.CallingAPI<GenRes, VendorAuditFormModel>(AllApiNames.ADD_EDIT_AUDIT_REQUEST!, _model);
+                    if (res.responseCode == 0)
+                        Snackbar.Add("saved successfully.", Severity.Success);
+                    MudDialog?.Close(DialogResult.Ok(true));
+
+                }
+                catch (Exception ex)
+                {
+                    Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
+                }
+                finally
+                {
+                    _isSubmitting = false;
+                }
+            }
+        }
+    }
+
+    private async Task ShowErrorDialog(string Tital, string message)
+    {
+        await DialogService.ShowMessageBox(Tital, message);
+    }
+    // ─── Submit (full validation) ─────────────────────────────────
+    private async Task Submit()
+    {
+        if (_isSubmitting) return;
+        _isSubmitting = true;
+
+        try
+        {
+            await _form.Validate();
+            if (!_form.IsValid)
+            {
+                Snackbar.Add("Please fill all required fields.", Severity.Warning);
+                return;
+            }
+
+            // ─── Validations ─────────────────────────────────────────────
+            if (_model.BusinessHead <= 0)
+            {
+                await ShowErrorDialog("Validation", "Business Head Data is missing.");
+                return;
+            }
+
+
+            // ✅ Validate checklist — at least all items must have Y/N
+            var unchecked_ = _model.Checklist.Where(c => c.Status == 0).ToList();
+
+            if (unchecked_.Any())
+            {
+                Snackbar.Add($"{unchecked_.Count} checklist item(s) have no YES/NO selection.", Severity.Warning);
+                return;
+            }
+
+
+            bool? confirm = await DialogService.ShowMessageBox("Confirmation", "Do you want to submit this audit form?", yesText: "  Yes  ", cancelText: "  No  ");
+
+            if (confirm == null) return;
+
+            _model.RequestedBuyerName =_CurrentUser.UserCode;
+            // ✅ Call your API here
+            // var req = new VendorAuditSaveRequest
+            // {
+            //     Form   = _model,
+            //     UserId = _userId,
+            //     Cmd    = "SUBMIT_VENDOR_AUDIT"
+            // };
+            // var res = await ApiService.CallingAPI<VendorAuditSaveResponse,
+            //               VendorAuditSaveRequest>("SUBMIT_VENDOR_AUDIT", req);
+            // if (res.ResponseCode == 0)
+            // {
+            //     Snackbar.Add("Audit form submitted.", Severity.Success);
+            //     MudDialog?.Close(DialogResult.Ok(true));
+            // }
+
+            Snackbar.Add("Audit form submitted successfully.", Severity.Success);
+            MudDialog?.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Submit failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    // ─── Cancel ───────────────────────────────────────────────────
+    private void Cancel()
+    {
+        MudDialog?.Close();
+    }
+}
+
+<style>
+    .mud-dialog-title {
+        color: white !important;
+        background: linear-gradient(to right, #0e6cb1, #ffffff) !important;
+    }
+
+    .mud-dialog-actions {
+        background: linear-gradient(to right, #3b7ed12b, #ffffff) !important;
+    }
+
+    .mud-simple-table thead th {
+        background-color: #ed008b !important;
+        color: white !important;
+        font-weight: bold !important;
+    }
+
+    .mud-simple-table.mud-table-dense * tr td,
+    .mud-simple-table.mud-table-dense * tr th {
+        padding: 4px 6px;
+    }
+
+    .table-container thead th {
+        position: sticky;
+        top: 0;
+        background: var(--mud-palette-surface);
+        z-index: 10;
+        box-shadow: 0 2px 2px rgba(0,0,0,0.1);
+    }
+</style>

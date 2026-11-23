@@ -1,0 +1,388 @@
+﻿@page "/audit/new"
+@page "/audit/{AuditReqId:int}/edit"
+@rendermode InteractiveServer
+@using Admin.Components.UIControls.AuditStepCompnents
+@using Application.DTOs
+@using Application.Interfaces.V1
+@using System.Security.Claims
+@attribute [Authorize]
+@inject IAuditStateService AuditStateSvc
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Factory Audit — @WizardStateDto.GetStepLabel(AuditStateSvc.State.CurrentStep)</PageTitle>
+
+<div class="wizard-shell">
+
+    <div class="wizard-top-bar">
+        <div class="wizard-brand">
+            <span>
+                @*  🏭 *@
+                <MudStack Spacing="1" AlignItems="AlignItems.Start">
+                    <MudImage Src="resources/vishal-mega-mart-logo.png" Alt="Vishal Mega Mart Logo" style="width:200px" />
+                </MudStack>
+            </span>
+            <div>
+                <h1>Vishal Mega Mart Limited – Factory Technical Audit</h1>
+                <h1>APPARELS</h1>
+                <p>Fill all sections. Auto-saved on every step.</p>
+            </div>
+            @*  <div style="text-align:center">
+                <h1>Vishal Mega Mart</h1>
+                <h1>Factory Evaluation Form - Technical</h1>
+                <h1>APPARELS</h1>
+                <p>Fill all sections. Auto-saved on every step.</p>
+            </div> *@
+        </div>
+        @if (!string.IsNullOrEmpty(AuditStateSvc.State.AuditCode))
+        {
+            <div class="audit-id-chip">
+                <span>Audit #</span>
+                <strong>@AuditStateSvc.State.AuditCode</strong>
+                <span class="status-pill @StatusCss(AuditStateSvc.State.StatusName)">@AuditStateSvc.State.StatusName</span>
+            </div>
+        }
+    </div>
+
+    <div class="group-tabs">
+        @foreach (var (group, steps) in StepGroups)
+        {
+            var isGroupActive = steps.Contains(AuditStateSvc.State.CurrentStep);
+            var isGroupDone = steps.All(s => AuditStateSvc.State.IsStepComplete(s));
+            <button class="group-tab @(isGroupActive ? "active" : "") @(isGroupDone ? "done" : "")"
+                    @onclick="() => AuditStateSvc.NavigateTo(steps.First(s => !AuditStateSvc.State.IsStepComplete(s) || s == steps.Last()))">
+                @if (isGroupDone)
+                {
+                    <span class="g-tick">✓</span>
+                }
+                @group
+                <span class="g-count">@steps.Count(s => AuditStateSvc.State.IsStepComplete(s))/@steps.Count</span>
+            </button>
+        }
+    </div>
+
+    <div class="step-pills-wrapper">
+        <div class="step-pills">
+            @for (int s = 1; s <= WizardStateDto.TotalSteps; s++)
+            {
+                var step = s;
+                var complete = AuditStateSvc.State.IsStepComplete(step);
+                var current = AuditStateSvc.State.IsCurrentStep(step);
+                var locked = !AuditStateSvc.State.IsStepUnlocked(step);
+                <button class="step-pill @(complete ? "done" : "") @(current ? "active" : "") @(locked ? "locked" : "")"
+                        title="@WizardStateDto.GetStepLabel(step)"
+                        @onclick="() => AuditStateSvc.NavigateTo(step)"
+                        disabled="@locked">
+                    @if (complete)
+                    {
+                        <span>✓</span>
+                    }
+                    else
+                    {
+
+                        <span>@step</span>
+                    }
+                    <span class="pill-label">@WizardStateDto.GetStepLabel(step)</span>
+                </button>
+                @if (s < WizardStateDto.TotalSteps)
+                {
+                    <div class="pill-line @(complete ? "done" : "")"></div>
+                }
+            }
+        </div>
+    </div>
+
+    <div class="progress-outer">
+        <div class="progress-fill" style="width:@AuditStateSvc.State.ProgressPercent%"></div>
+        <span class="progress-text">@AuditStateSvc.State.ProgressPercent% Complete — Step @AuditStateSvc.State.CurrentStep of @WizardStateDto.TotalSteps</span>
+    </div>
+
+    <div class="wizard-content">
+        @if (IsBusy)
+        {
+            <div class="loading-overlay">
+                <div class="spinner-ring"></div>
+                <p>@LoadingMsg</p>
+            </div>
+        }
+        else
+        {
+            <div class="step-header">
+                <span class="step-icon-lg">@WizardStateDto.GetStepIcon(AuditStateSvc.State.CurrentStep)</span>
+                <div>
+                    <h2>@WizardStateDto.GetStepLabel(AuditStateSvc.State.CurrentStep)</h2>
+                    <p class="step-hint">@GetStepHint(AuditStateSvc.State.CurrentStep)</p>
+                </div>
+                @if (AuditStateSvc.State.IsStepComplete(AuditStateSvc.State.CurrentStep))
+                {
+                    <span class="step-saved-badge">✓ Saved</span>
+                }
+
+                <MudChip T="string" Style="margin-left:auto;" OnClick="() => ViewRatingGrid()" Variant="Variant.Outlined" Icon="@Icons.Material.Filled.Info" Color="MudBlazor.Color.Secondary">Rating Procedure</MudChip>
+
+            </div>
+
+
+            @if (!string.IsNullOrEmpty(ErrorMsg))
+            {
+                <div class="error-bar">
+                    <span>⚠️ @ErrorMsg</span>
+                    <button @onclick="() => ErrorMsg = null">✕</button>
+                </div>
+            }
+
+            @switch (AuditStateSvc.State.CurrentStep)
+            {
+                case 1:
+                    <StepAuditorInfo AuditState="AuditStateSvc.State" OnSave="HandleStep1" />
+                    break;
+                case 2:
+                    <StepVendorInfo AuditState="AuditStateSvc.State" OnSave="HandleStep2" OnBack="AuditStateSvc.GoBack" CanSave="AuditStateSvc.State.IsSubmitted" />
+                    break;
+                case 3:
+                    <StepDocumentChecklist AuditState="AuditStateSvc.State" DocItems="AuditStateSvc.DocItems" OnSave="HandleStep3" OnBack="AuditStateSvc.GoBack" CanSave="AuditStateSvc.State.IsSubmitted" />
+                    break;
+                case >= 4 and <= 13:
+                    <StepElementScore AuditState="AuditStateSvc.State" Element="GetElementForStep(AuditStateSvc.State.CurrentStep)" OnSave="HandleElementStep" OnBack="AuditStateSvc.GoBack" CanSave="AuditStateSvc.State.IsSubmitted" />
+                    break;
+                case 14:
+                    <StepAttachments AuditState="AuditStateSvc.State" AttachItems="AuditStateSvc.AttachItems" OnSave="HandleStep14" OnBack="AuditStateSvc.GoBack" CanSave="AuditStateSvc.State.IsSubmitted" />
+                    break;
+                case 15:
+                    <StepComments AuditState="AuditStateSvc.State" OnSave="HandleStep15" OnBack="AuditStateSvc.GoBack" CanSave="AuditStateSvc.State.IsSubmitted" />
+                    break;
+                case 16:
+                    <StepReviewSubmit AuditState="AuditStateSvc.State" Elements="AuditStateSvc.Elements" OnSubmit="HandleSubmit" OnBack="AuditStateSvc.GoBack" CanSave="AuditStateSvc.State.IsSubmitted" />
+                    break;
+            }
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public int? AuditReqId { get; set; }
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    //private WizardStateDto DtoObject => AuditStateSvc.State;
+
+    private bool IsBusy = false;
+    private string LoadingMsg = "Loading…";
+    private string? ErrorMsg;
+    private string CurrentUser = "";
+    private string EmpCode = "";
+
+    private static readonly Dictionary<string, List<int>> StepGroups = new()
+    {
+        ["Basic Info"] = new() { 1, 2 },
+        ["Documents"] = new() { 3 },
+        ["Evaluation"] = Enumerable.Range(4, 10).ToList(),
+        ["Attachments"] = new() { 14 },
+        ["Submit"] = new() { 15, 16 }
+    };
+
+    private async Task ViewRatingGrid()
+    {
+
+        var parameters = new DialogParameters
+        {
+            ["RatingMaster"] = AuditStateSvc.State.RatingGridList
+        };
+        var options = new DialogOptions
+        {
+            CloseButton = true,
+            MaxWidth = MaxWidth.Large,
+            FullWidth = true
+        };
+
+        var dialog = DialogService.Show<RatingGridMasterInfo>($"Rating Procedure", parameters, options);
+
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        AuditStateSvc.StateChanged += OnStateChanged;
+        IsBusy = true;
+        LoadingMsg = "Loading audit form…";
+        try
+        {
+            await ResolveCurrentUserAsync();
+
+            int? existingAuditId = null;
+            if (AuditReqId.HasValue)
+                existingAuditId = await ResolveExistingAuditIdAsync(AuditReqId.Value);
+
+            await AuditStateSvc.InitialiseAsync(existingAuditId);
+
+            // Pre-fill auditor fields only for a brand-new audit
+            if (AuditStateSvc.State.AuditId == 0)
+            {
+                AuditStateSvc.State.Step1.AuditorEmpCode = EmpCode;
+                AuditStateSvc.State.Step1.AuditorName = CurrentUser;
+                AuditStateSvc.State.Step1.AuditDate = DateTime.Now;
+                if (AuditReqId.HasValue)
+                    AuditStateSvc.State.Step1.AuditReqId = AuditReqId.Value;
+                await AuditStart();
+            }
+        }
+        catch (Exception ex) { ErrorMsg = ex.Message; }
+        finally { IsBusy = false; }
+    }
+
+    private void OnStateChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => AuditStateSvc.StateChanged -= OnStateChanged;
+
+    // ── Auth ──────────────────────────────────────────────────
+
+    private async Task ResolveCurrentUserAsync()
+    {
+        if (AuthState is null) return;
+        var auth = await AuthState;
+        var user = auth.User;
+
+        if (user?.Identity is null || !user.Identity.IsAuthenticated)
+        { Nav.NavigateTo("/access-denied"); return; }
+
+        var uid = user.Claims.FirstOrDefault(c => c.Type == CustomClaimTypes.User_Id)?.Value;
+        if (string.IsNullOrWhiteSpace(uid))
+        { Nav.NavigateTo("/access-denied"); return; }
+
+        EmpCode = user.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value ?? "";
+        CurrentUser = user.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Name)?.Value ?? "";
+    }
+
+    // Calls your API and returns the existing AuditId (if any)
+    private async Task<int?> ResolveExistingAuditIdAsync(int auditReqId)
+    {
+        var req = new SelectListReq { Id = auditReqId };
+        var res = await ApiMasterService.CallingAPI<GetFactoryAuditByIdResponse, SelectListReq>(AllApiNames.GET_AUDIT_REQUEST_BY_ID, req);
+
+        if (res.responseCode != 0 ||
+            !string.Equals(res.responseMessage, "SUCCESS", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var obj = mapper.Map<VendorAuditFormModel>(res.HEADER);
+
+        // Pre-fill vendor info into state (read-only display data)
+        AuditStateSvc.State.VendorFactoryInfo.VendorName = obj.VendorName;
+        AuditStateSvc.State.VendorFactoryInfo.FactoryAddress = obj.RegisteredAddress;
+        AuditStateSvc.State.VendorFactoryInfo.AdditionalUnit = obj.FactoryLocation;
+        AuditStateSvc.State.VendorFactoryInfo.Category = obj.Category;
+        AuditStateSvc.State.VendorFactoryInfo.BuyerName = obj.RequestedBuyerName;
+        AuditStateSvc.State.VendorFactoryInfo.ProductName = obj.ProductCategory;
+        AuditStateSvc.State.VendorFactoryInfo.OwnerName = obj.ContactName;
+        AuditStateSvc.State.VendorFactoryInfo.OwnerContactNo = obj.ContactNumber;
+
+        return obj.AuditId > 0 ? (int)obj.AuditId : null;
+    }
+
+    // ── Step Handlers (thin — just delegate + error) ──────────
+    private async Task AuditStart()
+    {
+        StartAuditRequest dto = new StartAuditRequest();
+        dto.AuditReqId = AuditStateSvc.State.Step1.AuditReqId;
+        dto.UpdatedBy = CurrentUser;
+        dto.AuditorEmpCode = EmpCode;
+        dto.AuditDate = DateTime.Now;
+        await RunAsync("Audti Start…", () => AuditStateSvc.AuditStartAsync(dto));
+    }
+    private async Task HandleStep1(StartAuditRequest dto)
+    {
+        dto.AuditId = AuditStateSvc.State.AuditId;
+        dto.UpdatedBy = CurrentUser;
+        await RunAsync("Saving auditor info…", () => AuditStateSvc.SaveStep1Async(dto));
+    }
+
+    private async Task HandleStep2(VendorInfoRequest dto)
+    {
+        dto.AuditId = AuditStateSvc.State.AuditId;
+        dto.UpdatedBy = CurrentUser;
+        await RunAsync("Saving vendor info…", () => AuditStateSvc.SaveStep2Async(dto));
+    }
+
+    private async Task HandleStep3(List<DocumentResponseRequest> docs)
+    {
+        ListOfDocumentResponseRequest obj = new();
+        obj.AuditId = AuditStateSvc.State.AuditId;
+        obj.documentResponseRequests = docs;
+        obj.UpdatedBy = CurrentUser;
+        await RunAsync("Saving document checklist…", () => AuditStateSvc.SaveStep3Async(obj));
+    }
+
+    private async Task HandleElementStep(ElementScoresRequest dto)
+    {
+        dto.AuditId = AuditStateSvc.State.AuditId;
+        dto.UpdatedBy = CurrentUser;
+        await RunAsync($"Saving {WizardStateDto.GetStepLabel(AuditStateSvc.State.CurrentStep)} scores…", () => AuditStateSvc.SaveElementStepAsync(dto));
+    }
+    private async Task HandleStep14(List<AttachmentRequest> attachments)
+    {
+        ListOfAttachmentRequest obj = new();
+        obj.AuditId = AuditStateSvc.State.AuditId;
+        obj.attachmentRequests = attachments;
+        obj.UpdatedBy = CurrentUser;
+        await RunAsync("Saving attachments…", () => AuditStateSvc.SaveStep14Async(obj));
+    }
+
+    private async Task HandleStep15(OverallCommentsRequest dto)
+    {
+        dto.AuditId = AuditStateSvc.State.AuditId;
+        dto.UpdatedBy = CurrentUser;
+        await RunAsync("Saving comments…", () => AuditStateSvc.SaveStep15Async(dto));
+    }
+
+    private async Task HandleSubmit() =>
+        await RunAsync("Submitting audit…", async () =>
+        {
+            AuditBaseReq req = new(AuditStateSvc.State.AuditId, CurrentUser);
+            var error = await AuditStateSvc.SubmitAuditAsync(req);
+            if (error is null) Nav.NavigateTo("/NewAuditRequests");
+            return error;
+        });
+
+    // ── RunAsync — handles busy state + error display ─────────
+
+    private async Task RunAsync(string msg, Func<Task<string?>> action)
+    {
+        IsBusy = true;
+        LoadingMsg = msg;
+        ErrorMsg = null;
+        try { ErrorMsg = await action(); }
+        catch (Exception ex) { ErrorMsg = ex.Message; }
+        finally { IsBusy = false; }
+    }
+
+    private KeyElementResponse? GetElementForStep(int wizardStep) =>
+        AuditStateSvc.Elements.FirstOrDefault(e => e.ElementNo == wizardStep - 3);
+
+    private static string StatusCss(string s) => s switch
+    {
+        "Draft" => "s-draft",
+        "In Progress" => "s-progress",
+        "Submitted" => "s-submitted",
+        "Approved" => "s-approved",
+        "Rejected" => "s-rejected",
+        _ => ""
+    };
+
+    private static string GetStepHint(int step) => step switch
+    {
+        1 => "Auditing officer's employee code and the date of audit.",
+        2 => "Provide audit request ID and factory owner contact details.",
+        3 => "Mark each compliance document as Available (Y) or Not Available (N).",
+        4 => "Rate Raw Materials storage and inspection practices.",
+        5 => "Evaluate product development and sampling capabilities.",
+        6 => "Score cutting department processes and equipment.",
+        7 => "Assess sewing floor quality and machine maintenance.",
+        8 => "Rate finishing area standards and equipment.",
+        9 => "Evaluate packing practices and reference sample management.",
+        10 => "Score in-house and third-party laboratory testing.",
+        11 => "Assess Quality Assurance Management systems.",
+        12 => "Rate Quality Control processes and AQL compliance.",
+        13 => "Confirm critical compliance — No Child Labour.",
+        14 => "Upload mandatory factory photographs.",
+        15 => "Add overall observations and recommendations.",
+        16 => "Review all sections and submit for score calculation.",
+        _ => string.Empty
+    };
+}

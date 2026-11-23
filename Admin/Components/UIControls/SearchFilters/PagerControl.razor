@@ -1,0 +1,102 @@
+﻿
+<div class="d-flex align-center justify-space-between flex-wrap ga-4 mt-4 pa-2" style="width: 100%;">
+
+        <MudSelect T="int"
+               Value="PageSize"
+               ValueChanged="OnPageSizeChanged"
+               Label="Rows per page"
+               Variant="Variant.Outlined"
+               Margin="Margin.Dense"
+               Dense="true"
+               Adornment="Adornment.Start"
+               AdornmentIcon="@Icons.Material.Filled.ArrowDropDown"
+               AdornmentColor="Color.Secondary"
+               Class="rounded-lg"
+               Style="min-width: 150px; max-width: 170px;">
+        @foreach (var size in PageSizeOptions)
+        {
+            <MudSelectItem Value="size">
+                <div class="d-flex align-center ga-2">
+                    <span>@size per page</span>
+                </div>
+            </MudSelectItem>
+        }
+    </MudSelect>
+    <div class="d-flex align-center ga-1">
+        <MudTooltip Text="First page">
+            <MudIconButton Icon="@Icons.Material.Filled.FirstPage"
+                           Color="Color.Secondary"
+                           Disabled="@(PageNumber <= 1 || Loading)"
+                           OnClick="GoToFirstPage" />
+        </MudTooltip>
+
+        <MudTooltip Text="Previous page">
+            <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft"
+                           Color="Color.Secondary"
+                           Disabled="@(PageNumber <= 1 || Loading)"
+                           OnClick="GoToPrevPage" />
+        </MudTooltip>
+
+        <MudChip T="string"
+                 Variant="Variant.Outlined"
+                 Color="Color.Secondary"
+                 Class="mx-2">
+            @if (Loading)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>Loading...</span>
+            }
+            else
+            {
+                <span>Page <b>@PageNumber</b> of <b>@TotalPages</b> &nbsp;•&nbsp; @TotalCount total</span>
+            }
+        </MudChip>
+
+        <MudTooltip Text="Next page">
+            <MudIconButton Icon="@Icons.Material.Filled.ChevronRight"
+                           Color="Color.Secondary"
+                           Disabled="@(PageNumber >= TotalPages || Loading)"
+                           OnClick="GoToNextPage" />
+        </MudTooltip>
+
+        <MudTooltip Text="Last page">
+            <MudIconButton Icon="@Icons.Material.Filled.LastPage"
+                           Color="Color.Secondary"
+                           Disabled="@(PageNumber >= TotalPages || Loading)"
+                           OnClick="GoToLastPage" />
+        </MudTooltip>
+    </div>
+
+</div>
+
+@code {
+    [Parameter, EditorRequired] public int PageNumber { get; set; }
+    [Parameter, EditorRequired] public int PageSize { get; set; }
+    [Parameter, EditorRequired] public int TotalCount { get; set; }
+    [Parameter] public bool Loading { get; set; }
+    // [Parameter] public int[] PageSizeOptions { get; set; } 
+
+    private int pageSize => 50; 
+    private int[] PageSizeOptions => new[]
+    {
+        pageSize * 1,
+        pageSize * 2,
+        pageSize * 3,
+        pageSize * 4,
+        pageSize * 5
+    };
+
+
+    // Parent supplies "what to do when page/size changes" — component itself has zero data-fetch knowledge
+    [Parameter, EditorRequired] public EventCallback<int> PageChanged { get; set; }
+    [Parameter, EditorRequired] public EventCallback<int> PageSizeChanged { get; set; }
+
+    private int TotalPages => TotalCount == 0 ? 1 : (int)Math.Ceiling(TotalCount / (double)PageSize);
+
+    private async Task GoToFirstPage() => await PageChanged.InvokeAsync(1);
+    private async Task GoToPrevPage() => await PageChanged.InvokeAsync(PageNumber - 1);
+    private async Task GoToNextPage() => await PageChanged.InvokeAsync(PageNumber + 1);
+    private async Task GoToLastPage() => await PageChanged.InvokeAsync(TotalPages);
+
+    private async Task OnPageSizeChanged(int newSize) => await PageSizeChanged.InvokeAsync(newSize);
+}

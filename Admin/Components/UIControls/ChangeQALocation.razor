@@ -1,0 +1,373 @@
+﻿@inherits QpsPageBase
+@page "/QALocationMasterDialog"
+@using Admin.Components.Pages.UserMaster
+@using Admin.Components.Shared
+@using Admin.Components.UIControls.BaseComponents
+@using Application.Interfaces.V1.User
+@using MudExtensions
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="form">
+            <MudGrid>
+                <MudItem xs="12" md="9">
+                    <MudGrid>
+                        <!-- Employee Code -->
+                        <MudItem xs="12" md="6">
+                            @if (IsEditMode)
+                            {
+                                <MudTextField T="string" Label="Employee Code" ReadOnly="true" @bind-Value="User.Emp_Code" Required="true" />
+                            }
+                            else
+                            {
+                                <MudGrid>
+                                    <MudItem xs="12">
+                                        <MudTextField T="string" Label="Employee Code" @bind-Value="User.Emp_Code" Required="true" Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.PersonSearch" AdornmentColor="Color.Secondary" OnAdornmentClick="@(() => OnFindClick())" />
+                                    </MudItem>
+                                </MudGrid>
+                            }
+                        </MudItem>
+                        <!-- Employee Name -->
+                        <MudItem xs="12" md="6">
+                            <MudTextField T="string" Label="Employee Name" ReadOnly="true" @bind-Value="User.Emp_Name" Required="true" />
+                        </MudItem>
+                        <!-- Other fields here, similar to the example -->
+                        <MudItem xs="12" md="6">
+                            <MudTextField T="string" Label="Employee Location" ReadOnly="true" @bind-Value="User.Emp_Location" />
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudTextField T="string" Label="Employee Location Code" ReadOnly="true" @bind-Value="User.Emp_Loc_Code" />
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudTextField T="string" Label="Department Name" ReadOnly="true" @bind-Value="User.Emp_Dept_Name" />
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudTextField T="string" Label="Designation" ReadOnly="true" @bind-Value="User.Emp_Desig" />
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudTextField T="string" Label="Contact No" ReadOnly="true" @bind-Value="User.Emp_Contact_No" />
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudTextField T="string" Label="Email Id" ReadOnly="true" @bind-Value="User.Emp_Mail_Id" />
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudTextField T="string" Label="Reporting Manager" ReadOnly="true" @bind-Value="User.Emp_Rpt_Mng" />
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudSwitch T="bool" Label="Is Resigned?" @bind-Value="User.Is_Resign" Color="Color.Secondary" />
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudTextField T="string" Label="Employee Grade Description" ReadOnly="true" @bind-Value="User.Emp_Grade_Desc" />
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudSwitch T="bool" Label="Is Active?" @bind-Value="User.Emp_Status" Color="Color.Secondary" />
+                        </MudItem>
+                    </MudGrid>
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudGrid>
+                        <!-- Role Selection -->
+                        <MudItem xs="12" md="12">
+                            <MudSelect T="string" Label="Select Location" AnchorOrigin="Origin.BottomLeft" Clearable Variant="Variant.Text" @bind-Value="User.REGION_IDS" Required="true">
+                                @foreach (var rgn in User!.RegionList)
+                                {
+                                    <MudSelectItem T="string" Value="rgn.Master_ID.ToString()">@rgn.Master_Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" md="12">
+                            <MudTextField Label="Stamp No" @bind-Value="User.StampNo" />
+                        </MudItem>
+                        <MudItem xs="12" md="12">
+                            <SignatureUpload UserId="User.Id" SignatureBytes="User.SignatureBytes" OnSignatureSaved="HandleSignatureSaved" />
+                        </MudItem>
+                    </MudGrid>
+                </MudItem>
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Save" Color="Color.Secondary" Variant="Variant.Filled" Disabled="@isSubmitting">Save</MudButton>
+        <MudButton OnClick="CloseDialog" Color="Color.Error" Variant="Variant.Filled">Cancel</MudButton>
+    </DialogActions>
+</MudDialog>
+<Loader IsVisible="@IsLoading" />
+
+@code {
+    [Inject] private IUserDirectoryService UserDirectoryService { get; set; } = default!;
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+    [Parameter] public UserDetails User { get; set; }
+    [Parameter] public bool IsEditMode { get; set; }
+    private MudForm form;
+    private bool isSubmitting = false;
+    private SelectListReq selectListReq = new();
+    private HrpLoginByCodeReq hrpLoginByCodeReq = new();
+    bool IsLoading = false;
+
+    //Get_Roles_List
+    private async void Save()
+    {
+        await form.Validate();
+        if (form.IsValid)
+        {
+            bool? dres = await DialogService.ShowMessageBox("Confirmation", User.Id == 0 ? "Are you sure you want to save?" : "Are you sure you want to update this user?", yesText: "  Yes!  ", cancelText: "   No   ");
+            if (dres == null)
+            {
+                return;
+            }
+            else
+            {
+                MudDialog?.Close(DialogResult.Ok(User));
+            }
+        }
+    }
+
+    private void CloseDialog()
+    {
+        MudDialog?.Close();
+    }
+
+    private async Task ShowErrorDialog(string Tital, string message)
+    {
+        await DialogService.ShowMessageBox(Tital, message);
+    }
+
+    private async Task OnFindClick()
+    {
+        if (string.IsNullOrEmpty(User.Emp_Code))
+        {
+            await ShowErrorDialog("Warning", "Please enter a valid Emp Code.");
+            return;
+        }
+
+        var rgnlist = User.RegionList;
+
+        try
+        {
+            var result = await UserDirectoryService.FindUserByEmpCodeAsync(User.Emp_Code);
+
+            if (!result.Success)
+            {
+                await ShowErrorDialog("Error", result.ErrorMessage ?? "Failed to look up user.");
+                return;
+            }
+
+            User = result.Found ? result.User : new UserDetails();
+            if (!result.Found)
+            {
+                await ShowErrorDialog("Warning", "User not found.");
+            }
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorDialog("Error", $"An unexpected error occurred: {ex.Message}");
+        }
+        finally
+        {
+            User.RegionList = rgnlist;
+        }
+    }
+
+    private async Task HandleSignatureSaved(byte[] signatureBytes)
+    {
+        User.SignatureBytes = signatureBytes;
+        await Task.CompletedTask;
+    }
+
+}
+<style>
+    .mud-breadcrumbs {
+        padding: 12px 12px;
+    }
+
+    .floating-search-btn {
+        position: fixed;
+        top: 50%;
+        right: 0;
+        transform: translateY(-50%);
+        background-color: #e91e63;
+        color: white;
+        padding: 10px 6px;
+        border-radius: 8px 0 0 8px;
+        cursor: pointer;
+        writing-mode: vertical-rl;
+        text-orientation: mixed;
+        font-weight: bold;
+        z-index: 999;
+        box-shadow: 0 0 8px rgba(0,0,0,0.2);
+    }
+
+        .floating-search-btn:hover {
+            background-color: #c2185b;
+        }
+
+    .search-modal {
+        position: fixed;
+        top: 170px;
+        right: 35px;
+        background-color: white;
+        width: 320px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+        border-radius: 8px;
+        z-index: 1000;
+    }
+
+        .search-modal .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .search-modal .close-btn {
+            background: none;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+        }
+
+    .mud-simple-table.mud-table-dense * tr td, .mud-simple-table.mud-table-dense * tr th {
+        padding: 2px 4px
+    }
+
+    .font8 {
+        font-size: 0.8rem;
+    }
+
+    .mud-list-subheader-extended {
+        padding-top: 0px;
+        padding-bottom: 0px;
+        margin-bottom: -12px !important;
+    }
+
+    .mud-list-item-extended {
+        padding-bottom: 0px !important;
+    }
+
+    .mud-list-item-gutters-extended.mud-list-item-dense-extended {
+        padding-left: 4px;
+        padding-right: 4px;
+        padding-top: 0px;
+        padding-bottom: 0px;
+    }
+
+    .mud-list-subheader-gutters-extended {
+        padding-left: 8px;
+        padding-right: 8px;
+        padding-top: 0px !important;
+        padding-bottom: 0px !important;
+    }
+
+    .mud-icon-button-edge-margin-end {
+        color: red !important;
+    }
+
+    .mud-input > input.mud-input-root-outlined, div.mud-input-slot.mud-input-root-outlined {
+        padding: 15px 10px;
+        font-size: 12px;
+        height: 20px !important;
+    }
+
+
+
+    .filter-paper {
+        padding-left: 8px !important;
+        padding-right: 8px !important;
+        padding-top: 25px !important;
+        padding-bottom: 5px !important;
+        margin-left: 22px !important;
+        margin-right: 28px !important;
+        margin-bottom: 20px !important;
+    }
+
+    .mud-link {
+        font-size: 0.8rem !important;
+    }
+
+    .mud-list-item-multiselect-extended.mud-list-item-multiselect-checkbox-extended {
+        padding-inline-end: 0px;
+    }
+
+    .border1pxblack {
+        border: 1px solid #ffffffeb;
+        background-color: #ed008b !important;
+        color: white;
+    }
+
+    .border1pxblack1 {
+        background-color: #ed008b !important;
+        color: white;
+        border: none !important;
+    }
+
+    .my-custom-select {
+        position: relative;
+    }
+
+        .my-custom-select .mud-popover {
+            padding-top: 20px;
+        }
+
+    .filter-close-button {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        cursor: pointer;
+        background-color: white;
+        border: 1px solid #ccc;
+        border-radius: 50%;
+        padding: 2px;
+        z-index: 99999;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+
+    .mud-list-subheader-extended {
+        top: -6px !important;
+    }
+
+    .mud-list-subheader-extended {
+        position: relative !important;
+    }
+
+    .disabled-div {
+        pointer-events: none; /* Prevent clicks */
+        opacity: 0.6; /* Dimmed look */
+        background-color: #f0f0f0; /* Optional: lighter background */
+        user-select: none; /* Prevent text selection */
+    }
+
+    .mud-dialog-title {
+        border-bottom: 1px solid #1413140d;
+    }
+
+    .mud-dialog-actions {
+        border-top: 1px solid #1413140d;
+    }
+
+    .mud-dialog-content {
+        padding-top: 1.5rem !important;
+        padding-bottom: 1.5rem !important;
+    }
+
+    .mud-dialog-title {
+        padding: 11px !important;
+    }
+
+    .mud-message-box__yes-button {
+        color: white !important;
+        background-color: green !important;
+    }
+
+    .mud-message-box__cancel-button {
+        color: white !important;
+        background-color: red !important;
+    }
+
+    .mud-message-box .mud-dialog-actions {
+        display: flex;
+        flex-direction: row-reverse;
+        justify-content: flex-start;
+    }
+</style>

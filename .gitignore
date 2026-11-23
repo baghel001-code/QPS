@@ -1,0 +1,38 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+[Pp]ublish/
+*.nupkg
+packages/
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.pubxml.user
+serviceDependencies.local.json.user
+launchSettings.local.json
+
+# Local config & secrets
+appsettings.*.local.json
+secrets.json
+.env
+*.pfx
+*.key
+*.pem
+
+# Logs & runtime files
+Logs/
+*.log
+**/wwwroot/uploads/**
+**/wwwroot/Audit/**
+
+# OS
+.DS_Store
+Thumbs.db

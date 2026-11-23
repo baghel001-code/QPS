@@ -1,0 +1,23 @@
+﻿@page "/access-denied"
+
+
+@layout DashboardLayout //MainLayout
+<PageTitle>Access Denied</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="d-flex align-center justify-center" Style="height:80vh;">
+    <MudPaper Class="pa-6 text-center" Elevation="3">
+
+        <MudText Typo="Typo.h3" Color="Color.Error">
+            403
+        </MudText>
+
+        <MudText Typo="Typo.h5" Color="Color.Error">
+            🚫 Access Denied
+        </MudText>
+
+        <MudText Class="mt-2 mb-4">
+            You do not have permission to access this page.
+        </MudText>
+
+    </MudPaper>
+</MudContainer>

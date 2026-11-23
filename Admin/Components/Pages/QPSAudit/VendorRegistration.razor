@@ -1,0 +1,367 @@
+﻿@page "/NewAuditRequests"
+@using Admin.Components.Shared
+@using Admin.Components.UIControls
+@using System.Security.Claims
+@using Application.DTOs
+@attribute [Authorize(Policy = "InspectionRequestAccess")]
+
+<MudGrid Class="justify-end">
+    <MudItem>
+        <MudBreadcrumbs Items="_items">
+            <ItemTemplate Context="item">
+                <MudLink Href="@item.Href">@item.Text.ToUpper()</MudLink>
+            </ItemTemplate>
+        </MudBreadcrumbs>
+    </MudItem>
+</MudGrid>
+<MudStack Row="true" AlignItems="AlignItems.End" Justify="Justify.FlexEnd" Class="mb-2">
+
+    <MudButton OnClick="() => OpenRoleDialog()" StartIcon="@Icons.Material.Filled.Add" Variant="Variant.Filled" Color="Color.Secondary">
+        Create New Vendor Audit Request
+    </MudButton>
+
+</MudStack>
+
+<MudTable Items="filteredPO" @ref="mudTable" Dense="true" Loading="@IsLoading">
+    <ToolBarContent>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Secondary">New Vendor List - [ @filteredPO.Count ] </MudChip>
+        <MudSpacer />
+        <MudTextField T="string" Value="@searchQuery" ValueChanged="OnSearchChanged" Placeholder="Search" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>BUSINESS HEAD</MudTh>
+        <MudTh>AUDIT DATE</MudTh>
+        <MudTh>TEMP CODE</MudTh>
+        <MudTh>VENDOR</MudTh>
+        <MudTh>GST NO.</MudTh>
+        @*   <MudTh>ADDRESS</MudTh> *@
+        <MudTh>CONTACT NAME</MudTh>
+        <MudTh>CONTACT NO.</MudTh>
+        <MudTh>LIECENCE NUMBER</MudTh>
+        <MudTh>CREATED BY</MudTh>
+        <MudTh>CREATED AT</MudTh>
+        <MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.Head</MudTd>
+        <MudTd>@(context.AuditDate?.ToString("dd-mm-yyyy"))</MudTd>
+        <MudTd>@(context.TempVendorCode)</MudTd>
+        <MudTd>@(context.VendorName)</MudTd>
+        <MudTd>@(context.GstNumber)</MudTd>
+        @*  <MudTd>@(context.RegisteredAddress)</MudTd> *@
+        <MudTd>@(context.ContactName)</MudTd>
+        <MudTd>@(context.ContactNumber)</MudTd>
+        <MudTd>@(context.FactoryLicenceNumber)</MudTd>
+        <MudTd>@(context.CreatedBy)</MudTd>
+        <MudTd>@(context.CreatedOn.ToString("dd-mm-yyyy"))</MudTd>
+        <MudTd>
+            <MudButton OnClick="() => OpenRoleDialog(context)" StartIcon="@Icons.Material.Filled.EditNote" Color="Color.Success" Variant="Variant.Text" />
+            <MudButton OnClick="() => OpenAuditReportDialog(context)" StartIcon="@Icons.Material.Filled.AddTask" Color="Color.Primary" Variant="Variant.Text" />
+        </MudTd>
+    </RowTemplate>
+    <LoadingContent>
+        <MudText>Loading...</MudText>
+    </LoadingContent>
+    <NoRecordsContent>
+        <MudText>No records found</MudText>
+    </NoRecordsContent>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="@pageSizeOptions" />
+    </PagerContent>
+</MudTable>
+<Loader IsVisible="@IsLoading" />
+
+@code {
+    private SelectListReq selectListReq = new();
+    private List<VendorAuditFormModel> filteredPO = new();
+    private List<VendorAuditFormModel> pagedPO = new(); // Users to be shown on the current page
+    private MudTable<VendorAuditFormModel> mudTable;
+    private string searchQuery = string.Empty;
+    private int pageSize => 50; // Items per page
+    bool IsLoading = false;
+    private int[] pageSizeOptions => new[]
+    {
+        pageSize * 1,
+        pageSize * 2,
+        pageSize * 3,
+        pageSize * 4,
+        pageSize * 5
+    };
+    private int currentPage = 0; // Current page index
+    private string VendorCode = ""; //  Current logged in user id
+    private string DoI = "QAM DOI";
+    private string QA = "QA";
+
+    private bool IsQC;
+    private bool IsQAM;
+    private bool IsQA;
+    private bool IsQAAdmin;
+    private bool IsBuyer;
+    private bool IsAdmin;
+    private bool IsCH;
+    private bool IsACH;
+    private bool IsVendor;
+    private int User_Id = 0;
+    private List<string> QAMADMINRGN = new();
+    private List<BreadcrumbItem> _items = new List<BreadcrumbItem>
+    {
+        new BreadcrumbItem("Home", href: "#"),
+        new BreadcrumbItem("New Vendor List", href: "#", disabled: true)
+    };
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            IsLoading = true;
+
+            var user = HttpContextAccessor.HttpContext?.User;
+
+            if (user == null || user.Identity == null || !user.Identity.IsAuthenticated)
+            {
+                NavigationManager.NavigateTo("/access-denied");
+                return;
+            }
+
+            var uid = user.Claims.FirstOrDefault(c => c.Type == CustomClaimTypes.User_Id)?.Value;
+
+            if (string.IsNullOrWhiteSpace(uid))
+            {
+                NavigationManager.NavigateTo("/access-denied");
+                return;
+            }
+
+            User_Id = Convert.ToInt32(uid);
+
+            var rgns = user.Claims.FirstOrDefault(c => c.Type == CustomClaimTypes.RGNS)?.Value;
+
+            QAMADMINRGN = !string.IsNullOrEmpty(rgns) ? rgns.Split(',').ToList() : new List<string>();
+
+            VendorCode = user.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value ?? "";
+
+            IsVendor = user.IsInRole("Vendor");
+            IsBuyer = user.IsInRole("2");
+            IsQC = user.IsInRole("3");
+            IsAdmin = user.IsInRole("5");
+            IsQAM = user.IsInRole("1007");
+            IsQA = user.IsInRole("1006");
+            IsQAAdmin = user.IsInRole("1008");
+            IsACH = user.IsInRole("1011");
+            IsCH = user.IsInRole("1010");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            NavigationManager.NavigateTo("/access-denied");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                IsLoading = true;
+                StateHasChanged();
+                await GetPOs();
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add(ex.Message, Severity.Error);
+            }
+            finally
+            {
+                IsLoading = false;
+                StateHasChanged();
+            }
+        }
+
+
+    }
+
+    private async Task GetPOs()
+    {
+        pagedPO = new();
+        FactoryAuditListRequest req = new FactoryAuditListRequest();
+
+        IsLoading = true;
+        var res = await ApiMasterService.CallingAPI<GetFactoryAuditListResponse, FactoryAuditListRequest>(AllApiNames.GET_ALL_AUDIT_REQUEST, req);
+        IsLoading = false;
+
+        if (res.responseCode == 0)
+        {
+            if (res.ITEMS == null)
+            {
+                Snackbar.Add("No record found.", Severity.Error);
+            }
+            else
+            {
+                foreach (var item in res.ITEMS)
+                {
+                    pagedPO.Add(mapper.Map<VendorAuditFormModel>(item));
+                }
+
+            }
+        }
+        else
+        {
+            Snackbar.Add(res.responseMessage, Severity.Error);
+        }
+        filteredPO = pagedPO;
+    }
+    private void OnSearchChanged(string searchQuery)
+    {
+        this.searchQuery = searchQuery;
+        FilterPOs(); // Apply search filter
+    }
+    private void FilterPOs()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            filteredPO = pagedPO; // Show all Users if search is empty
+        }
+        else
+        {
+
+            // filteredPO = pagedPO.Where(a =>
+            //                            a.VendorCode?.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) == true ||
+            //                            a.VendorName?.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) == true ||
+            //                            a.InspectionNo?.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) == true ||
+            //                            a.PoNumber?.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) == true
+            //                            ).ToList();
+
+            ApplyPaging(); // Re-apply pagination after search
+        }
+    }
+    private void ApplyPaging()
+    {
+        var startIndex = currentPage * pageSize;
+        filteredPO = filteredPO.Skip(startIndex).Take(pageSize).ToList(); // Paginate the filtered Users
+    }
+    private void OnPageChanged(int newPage)
+    {
+        currentPage = newPage;
+        ApplyPaging(); // Update paged users when the page is changed
+    }
+    private async Task OpenRoleDialog(VendorAuditFormModel? Obj = null)
+    {
+        bool CanSave = false;
+        if (Obj != null)
+        {
+            selectListReq.Id = (int)Obj.AuditReqId;
+
+            var res = await ApiMasterService.CallingAPI<GetFactoryAuditByIdResponse, SelectListReq>(AllApiNames.GET_AUDIT_REQUEST_BY_ID, selectListReq);
+            if (res.responseCode == 0 && string.Equals(res.responseMessage, "SUCCESS", StringComparison.OrdinalIgnoreCase))
+            {
+                Obj = mapper.Map<VendorAuditFormModel>(res.HEADER);
+                Obj.Checklist.Clear();
+                foreach (var checklist in res.CHECKLIST)
+                {
+                    Obj.Checklist.Add(mapper.Map<AuditChecklistItem>(checklist));
+                }
+            }
+        }
+        else
+        {
+            Obj = new();
+        }
+
+        var parameters = new DialogParameters
+        {
+            { "ExistingModel",  Obj },
+            { "IsEditMode", !string.IsNullOrEmpty(Obj.GstNumber) },
+            { "CanSave", CanSave}
+        };
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.ExtraExtraLarge, FullWidth = true };
+
+
+        var dialog = DialogService.Show<VendorAuditForm>("Factory Audit Request Form", parameters, options);//VendorAuditForm  FactoryAuditInspection
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled)
+        {
+
+            await GetPOs();
+        }
+
+    }
+    private async Task OpenAuditReportDialog(VendorAuditFormModel? Obj = null)
+    {
+        VendorInfoRequest obj = new();
+        if (Obj != null)
+        {
+            NavigationManager.NavigateTo($"/audit/{Obj.AuditReqId}/edit", forceLoad: false);
+
+        }
+
+
+    }
+
+    private async Task ShowErrorDialog(string message)
+    {
+        await DialogService.ShowMessageBox(title: "Error", markupMessage: (MarkupString)message, yesText: "OK");
+    }
+
+}
+<style>
+    .mud-table-container {
+        max-height: 48vh;
+    }
+
+    .mud-table th {
+        background-color: #d92160;
+        color: white !important;
+        font-weight: bold !important;
+        font-size: 15px;
+    }
+
+    .inspection-grid {
+        display: grid;
+        grid-auto-flow: column; /* 👈 column-first */
+        grid-template-columns: repeat(4, auto); /* number of rows per column */
+        gap: 16px;
+    }
+</style>
+<style>
+
+    .mud-dialog-title {
+        color: white !important;
+        background: linear-gradient(to right, #0e6cb1, #ffffff) !important;
+    }
+
+    .mud-dialog-actions {
+        background: linear-gradient(to right, #3b7ed12b, #ffffff) !important
+    }
+
+</style>
+<style>
+    .mud-breadcrumbs {
+        padding: 12px 12px;
+    }
+
+    /* Target MudTable header row */
+    .mud-table thead tr th {
+        background-color: #ed008b !important;
+        color: #ffffff !important;
+        font-weight: bold !important;
+    }
+
+    .mud-table-cell {
+        padding-inline-start: 5px !important;
+        padding-inline-end: 5px !important;
+    }
+
+    .highlight {
+        background-color: yellow;
+        color: darkblue;
+        font-weight: bold;
+    }
+
+</style>
+
+

@@ -1,0 +1,191 @@
+﻿@inherits InspectionReportPageBase
+@using Admin.Components.Shared
+@using Admin.Components.UIControls.BaseComponents
+@using MudBlazor
+
+<MudDialog>
+    <DialogContent>
+        @if (_reportModel is null)
+        {
+            <MudProgressCircular Indeterminate="true" />
+        }
+        else
+        {
+            <!-- PRINT AREA -->
+            <div id="print-area">
+                <MudPaper Elevation="0" Class="pa-2 print-paper">
+                    <!-- HEADER -->
+                    <MudStack Spacing="1" AlignItems="AlignItems.Center">
+                        <MudImage Src="resources/vishal-mega-mart-logo.png" Alt="Vishal Mega Mart Logo" style="width:20%" />
+                        <MudText Typo="Typo.h5" Bold="true">Vishal Mega Mart Limited</MudText>
+                        <MudChip T="string" Color="_reportModel.IsPass? Color.Success: Color.Error" Variant="Variant.Filled">
+                            <MudText Typo="Typo.h4" Class="fw-bold">
+                                @_reportModel.InspectionResultText
+                            </MudText>
+                        </MudChip>
+                        <MudText Typo="Typo.subtitle2">
+                            @if (rpt == "Inline")
+                            {
+                                <b>@title</b>
+                            }
+                            else
+                            {
+                                <b>
+                                    @rpt
+                                    <sup>@sup</sup>
+                                    -
+                                </b>
+                                @title
+                            }
+                        </MudText>
+                    </MudStack>
+                    <MudDivider Class="my-3" />
+
+                    <MudGrid>
+                        <MudItem xs="6"><b>Buyer Name:-</b> @_reportModel.BuyerName (@_reportModel.BuyerId) </MudItem>
+                        <MudItem xs="6" class="d-flex justify-end"><b>Report No:- </b> @_reportModel.ReportNo</MudItem>
+                    </MudGrid>
+
+                    <MudDivider Class="my-3" />
+
+                    <!-- BASIC INFO -->
+                    <MudGrid>
+                        <MudItem xs="2"><b>PO No:</b> </MudItem>
+                        <MudItem xs="4">@_reportModel.PONumber</MudItem>
+                       @*  <MudItem xs="2"><b>FI Date:</b> </MudItem>
+                        <MudItem xs="4"> @_reportModel.FIDate?.ToString("dd-MM-yyyy HH:mm")</MudItem> *@
+                        <MudItem xs="3"><b>FI Date:</b> @_reportModel.FIDate?.ToString("dd-MM-yyyy HH:mm") </MudItem>
+                        <MudItem xs="3"><b>Last Amendment On:</b> @_reportModel.Last_Amendment_Date?.ToString("dd-MM-yyyy HH:mm") </MudItem>
+
+
+                        <MudItem xs="2"><b>Vendor:</b> </MudItem>
+                        <MudItem xs="4"> @_reportModel.VendorName (@_reportModel.VendorCode)</MudItem>
+                        <MudItem xs="2"><b>Vendor Location:</b> </MudItem>
+                        <MudItem xs="4">@_reportModel.VendorLocation</MudItem>
+
+                        <MudItem xs="2"><b>Order Quantity:</b> </MudItem>
+                        <MudItem xs="4">@_reportModel.POTotalQty.ToString("0") PCS</MudItem>
+                        <MudItem xs="2"><b>Offered Quantity:</b> </MudItem>
+                        <MudItem xs="4">@_reportModel.OfferedQuantity.ToString("0") PCS</MudItem>
+
+                        <MudItem xs="2"><b>Description/Category:</b> </MudItem>
+                        <MudItem xs="4">
+                            @string.Join(" / ", new[] { !string.IsNullOrEmpty(_reportModel.MCText) ? _reportModel.MCText : "---", !string.IsNullOrEmpty(_reportModel.Category) ? _reportModel.Category : "---" }.Where(x => !string.IsNullOrEmpty(x)))
+                        </MudItem>
+                        <MudItem xs="2"><b>Color/MRP:</b> </MudItem>
+                        <MudItem xs="4"> @_reportModel.Color  @(_reportModel.MRP > 0 ? " / " + _reportModel.MRP.ToString() : "---")</MudItem>
+
+                        <MudItem xs="2"><b>Packing Status (100% Packed):</b> </MudItem>
+                        <MudItem xs="4"> @_reportModel.PackingStatus</MudItem>
+                        <MudItem xs="2"><b>No. Of Bags/Carton:</b> </MudItem>
+                        <MudItem xs="4"> @_reportModel.NoOfBagsCartonsQty @_reportModel.NoOfBagsCartonsUnit</MudItem>
+
+                        <MudItem xs="2"><b>Article Number:</b> </MudItem>
+                        <MudItem xs="10">@_reportModel.ArticleNumber</MudItem>
+                    </MudGrid>
+
+                    <MudDivider Class="my-3" />
+
+                    <!-- DEFECTS -->
+                    <MudChip T="string" Variant="Variant.Outlined" Color="MudBlazor.Color.Secondary"><b>Abortive Reason /(s)</b> </MudChip>
+                    <MudTable T="AbortiveReasonsRowPdf" Items="_reportModel.Reasons" Hover="true" Dense="true" Bordered="true" Striped="true">
+                        <ColGroup>
+                            <col style="width:100px" />     <!-- SR No -->
+                            <col style="width:auto" />     <!-- Defects -->
+                        </ColGroup>
+
+                        <HeaderContent>
+                            <MudTh>Sr.No.</MudTh>
+                            <MudTh>Abortive Reason /(s)</MudTh>
+                        </HeaderContent>
+
+                        <RowTemplate>
+                            <MudTd>
+                                @context.SNo
+                            </MudTd>
+                            <MudTd DataLabel="DEFECTS">
+                                @context.Reason
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+
+                    <MudDivider Class="my-3" />
+
+                    <!-- FOOTER -->
+                    <MudGrid Class="mt-4">
+                        <MudItem xs="12">
+                            I am  hereby accepting that the Inspeciton is postponed due to the abobe reason / (s) and I bear to pay the below charge / (s) :
+                            <br /><br />
+                            Postponement Charge / P.O:
+                            <br /><br />
+                            Amount of travelling and other expences : @_reportModel.Amt_Travelling
+                        </MudItem>
+                        <MudDivider Class="my-3" />
+                        <MudItem xs="6">
+                            <b>Name of VMM QA and Sign/date:</b><br /> @_reportModel.InspectorName<br /><br /><br />
+                            @DateTime.Now.ToString("dd-MM-yyyy HH:mm:ss")
+                        </MudItem>
+                        <MudItem xs="6" Align="Align.Right">
+                            <b>Name of the Factory Representative (Signature / date) and stamp/Mobile: </b><br /> @_reportModel.FactoryRepresentative
+                        </MudItem>
+                    </MudGrid>
+                    <MudDivider Class="my-3" />
+                    @if (!IsPreview)
+                    {
+                        <MudGrid Class="mt-4">
+                            <MudItem xs="12" md="12">
+                                <MudChip T="string" Variant="Variant.Text" Color="MudBlazor.Color.Success">QA Documents</MudChip>
+                                @if (!string.IsNullOrEmpty(_reportModel.TestReportAttachmentRaw))
+                                {
+                                    @foreach (var thumb in _reportModel.TestReportAttachmentRaw.Split(",").Select((value, index) => new { value, index }))
+                                    {
+                                        if (thumb.value.Contains("."))
+                                        {
+                                            <MudButton @onclick="@(() => OpenInNewTab(thumb.value))">Attachment  - @(thumb.index + 1)</MudButton>
+                                        }
+
+                                    }
+                                }
+                            </MudItem>
+                            <MudItem xs="12" md="12">
+                                <MudChip T="string" Variant="Variant.Text" Color="MudBlazor.Color.Secondary">Admin Documents</MudChip>
+                                @if (!string.IsNullOrEmpty(_reportModel.GenAttachmentFirstRaw))
+                                {
+
+                                    @foreach (var item in _reportModel.GenAttachmentFirstRaw.Split(",").Select((value, index) => new { value, index }))
+                                    {
+                                        if (item.value.Contains("."))
+                                        {
+                                            <MudButton @onclick="@(() => OpenInNewTab(item.value))">
+                                                Attachment - @(item.index + 1)
+                                            </MudButton>
+                                        }
+                                    }
+                                }
+                            </MudItem>
+                        </MudGrid>
+                    }
+                </MudPaper>
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Color="Color.Primary" OnClick="Close">Close</MudButton>
+        <MudButton OnClick="() => HandleExportClick()" StartIcon="@Icons.Material.Filled.Edit" Color="Color.Secondary" Variant="Variant.Text">Export Pdf</MudButton>
+    </DialogActions>
+</MudDialog>
+<MessageBox @ref="messageBox" />
+<Loader IsVisible="@IsLoading" />
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+    void Close() => MudDialog?.Close();
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadReportModel();
+    }
+    private async Task HandleExportClick()
+    {
+        await ExportToExcel("Pdf", "Abortive");
+    }
+}
