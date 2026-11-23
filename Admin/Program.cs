@@ -59,8 +59,8 @@ string logFilePath = builder.Configuration.GetValue<string>("ErrorLoggingSetting
 
 builder.Services.Configure<AppConfigurationSettings>(builder.Configuration.GetSection("AppConfigurationSettings"));
 builder.Services.Configure<EmailServerSettings>(builder.Configuration.GetSection("EmailServerSettings"));
-builder.Services.Configure<EmailSchedulerOptions>(builder.Configuration.GetSection("EmailScheduler"));
-builder.Services.Configure<Domain.Entities.AppSettings.SapPoOptions>(builder.Configuration.GetSection(Domain.Entities.AppSettings.SapPoOptions.SectionName)); // N17: how the PO quantity is read from SAP// injected as IOptions<EmailSchedulerOptions> options
+builder.Services.Configure<EmailSchedulerOptions>(builder.Configuration.GetSection("EmailScheduler"));// injected as IOptions<EmailSchedulerOptions> options
+builder.Services.Configure<Domain.Entities.AppSettings.SapPoOptions>(builder.Configuration.GetSection(Domain.Entities.AppSettings.SapPoOptions.SectionName)); // N17: how the PO quantity is read from SAP
 
 builder.Services.AddInfrastructure(useProxyValue, logFilePath ?? "", levelSwitch);
 builder.Services.AddDependencies();
