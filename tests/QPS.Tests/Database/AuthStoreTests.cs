@@ -176,6 +176,23 @@ namespace QPS.Tests.Database
             Assert.NotNull(await Store.FindUserIdByPasswordResetTokenAsync(new() { tokenHash = "hash-second" }));
         }
 
+        // Regression: ISSUE / FIND / REDEEM used to write every token hash into the debug table ProcParaTest.
+        [SqlServerFact]
+        public async Task Reset_tokens_are_not_written_to_the_debug_table()
+        {
+            db.Clock.Now = QpsDatabaseFixture.Start;
+            var user = Req("V0001", AccountType.Vendor);
+            user.tokenHash = "hash-not-logged";
+            user.expiresUtc = db.Clock.Now.AddMinutes(30);
+
+            await Store.SavePasswordResetTokenAsync(user);
+            await Store.FindUserIdByPasswordResetTokenAsync(new() { tokenHash = "hash-not-logged" });
+            await Store.ConsumePasswordResetTokenAsync(new() { tokenHash = "hash-not-logged" });
+
+            using var c = db.Open();
+            Assert.Equal(0, c.ExecuteScalar<int>("SELECT COUNT(*) FROM ProcParaTest WHERE ColumnValues LIKE '%hash-not-logged%'"));
+        }
+
         [SqlServerFact]
         public async Task An_expired_reset_token_is_neither_found_nor_redeemed()
         {

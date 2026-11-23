@@ -3362,7 +3362,6 @@ CREATE   PROCEDURE [auth].[PRO_PASSWORD_RESET_TOKEN_FIND]
 AS
 BEGIN
     SET NOCOUNT ON;
-	insert into ProcParaTest values('AccountType: Token : '+@TOKEN_HASH +' | InsertedAt: '+ Convert(varchar, GETDATE(),9));
     SELECT TOP (1)
            t.UserId      AS USER_CODE,
            t.AccountType AS ACCOUNT_TYPE
@@ -3389,7 +3388,6 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRANSACTION;
-		insert into ProcParaTest values('AccountType: '+@ACCOUNT_TYPE +' | UserCode: '+@USER_CODE+' | Token : '+@TOKEN_HASH +' | InsertedAt: '+ Convert(varchar, GETDATE(),9));
         -- Only one live token per user: issuing a new one invalidates the previous link.
         -- UPDLOCK + HOLDLOCK keeps two simultaneous "forgot password" clicks from
         -- both inserting and leaving two valid links.
@@ -3432,7 +3430,6 @@ BEGIN
         ACCOUNT_TYPE  VARCHAR(20),
         EXPIRES_UTC   DATETIMEOFFSET
     );
-	insert into ProcParaTest values('Redeem : Token : '+@TOKEN_HASH +' | InsertedAt: '+ Convert(varchar, GETDATE(),9));
     -- Atomic: two requests racing with the same link can't both get a row back.
     -- Expired tokens are deleted too, but return no user.
     DELETE FROM auth.PasswordResetToken

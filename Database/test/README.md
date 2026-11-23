@@ -45,8 +45,10 @@ once per database:
 
 ```bash
 sqlcmd -S <server> -d VMM_QPS -b -i Database/migrations/2026-11-23-user-security-stamp.sql
+sqlcmd -S <server> -d VMM_QPS -b -i Database/migrations/2026-11-23-remove-reset-token-debug-log.sql
 ```
 
 | Migration | Fixes |
 |---|---|
 | `2026-11-23-user-security-stamp.sql` | `auth.PRO_LOGIN_RECORD_FAILED_COUNT` and `auth.PRO_LOGIN_LOCKOUT` inserted `auth.UserSecurity` without `SecurityStamp` (NOT NULL), so the first wrong password or lockout of a user without a security row failed with a SQL error. |
+| `2026-11-23-remove-reset-token-debug-log.sql` | `auth.PRO_PASSWORD_RESET_TOKEN_ISSUE`, `_FIND` and `_REDEEM` wrote every reset-token hash (and user code) into the debug table `ProcParaTest`. Recreates them without it and deletes the rows already logged (`ColumnValues LIKE '%Token :%'`). |
