@@ -155,7 +155,7 @@ namespace Domain.Entities.Modals
 
         public bool IsCancelled { get; set; } = false;
         public bool Is_Qc_At_Dc { get; set; } = false;
-        public POHeader MapToHeader(POSAPResponse root)
+        public POHeader MapToHeader(POSAPResponse root, Domain.Entities.AppSettings.PoTotalQtyMode qtyMode = Domain.Entities.AppSettings.PoTotalQtyMode.FirstRow)
         {
             //APP FM GM MISC NT
 
@@ -180,7 +180,10 @@ namespace Domain.Entities.Modals
                 Brand_Id = first.BRAND_ID,
                 Brand_Id2 = first.BRAND_ID2,
                 FIT = first.FIT,
-                POTotalQty = Convert.ToDecimal(first.PURCHASE_TOT_QTY),
+                // N17: first row (SAP repeats the PO total on every line) or the sum of the line quantities, one per line item
+                POTotalQty = qtyMode == Domain.Entities.AppSettings.PoTotalQtyMode.SumOfLines
+                    ? root.APPS_FOOTWEAR_DETAILS.GroupBy(x => (x.PO_LINE_ITEM ?? "").Trim()).Sum(g => Convert.ToDecimal(g.First().PURCHASE_TOT_QTY))
+                    : Convert.ToDecimal(first.PURCHASE_TOT_QTY),
                 Fabric = string.IsNullOrWhiteSpace(first.FABRIC!) ? root.APPS_FOOTWEAR_DETAILS.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x.FABRIC!))?.FABRIC! ?? "NA" : first.FABRIC,
                 Color = string.IsNullOrWhiteSpace(first.COLOR!) ? root.APPS_FOOTWEAR_DETAILS.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x.COLOR!))?.COLOR! ?? "NA" : first.COLOR
             };
@@ -224,9 +227,30 @@ namespace Domain.Entities.Modals
             if (!SameText(Brand_Id, sap.Brand_Id)) changes.Add("Brand");
             if (!SameText(Brand_Id2, sap.Brand_Id2)) changes.Add("Brand 2");
             if (!SameText(FIT, sap.FIT)) changes.Add("Fit");
-
+            if (LineChanges(sap) is { } lines) changes.Add(lines);
             return changes;
         }
+
+        /// <summary>
+        /// N9: line items compared by line item number. Null when nothing differs, or when either side has no lines
+        /// loaded (then the lines cannot be compared and only the header decides).
+        /// </summary>
+        public string? LineChanges(POHeader sap)
+        {
+            if (Details.Count == 0 || sap.Details.Count == 0) return null;
+            static string Key(PODetails d) => (d.LineItem ?? string.Empty).Trim();
+            var mine = Details.GroupBy(Key).ToDictionary(g => g.Key, g => g.First());
+            var theirs = sap.Details.GroupBy(Key).ToDictionary(g => g.Key, g => g.First());
+            int changed = mine.Keys.Intersect(theirs.Keys).Count(k => !SameLine(mine[k], theirs[k]));
+            int added = theirs.Keys.Except(mine.Keys).Count();
+            int removed = mine.Keys.Except(theirs.Keys).Count();
+            return changed + added + removed == 0 ? null : $"Line items ({changed} changed, {added} added, {removed} removed)";
+        }
+
+        private static bool SameLine(PODetails a, PODetails b) =>
+            SameText(a.Article, b.Article) && SameText(a.ArticleDesc, b.ArticleDesc) && SameText(a.AtTyp, b.AtTyp) &&
+            a.PurchaseTotQty == b.PurchaseTotQty && a.PrepackQty == b.PrepackQty && a.PrepackQtyEaches == b.PrepackQtyEaches &&
+            a.Eaches == b.Eaches && a.MRP == b.MRP;
         public override bool Equals(object obj) => obj is POHeader other && GetChangedFields(other).Count == 0;
         
         public override int GetHashCode()
@@ -250,6 +274,14 @@ namespace Domain.Entities.Modals
             Fabric = other.Fabric;
             MCText = other.MCText;
             POTotalQty = other.POTotalQty;
+            // N9: take SAP's lines, keeping the QPS id of each line item that already existed
+            if (other.Details.Count > 0)
+            {
+                var ids = Details.GroupBy(d => (d.LineItem ?? string.Empty).Trim()).ToDictionary(g => g.Key, g => g.First().Id);
+                foreach (var d in other.Details)
+                    d.Id = ids.GetValueOrDefault((d.LineItem ?? string.Empty).Trim());
+                Details = other.Details;
+            }
         }
 
 

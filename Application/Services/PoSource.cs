@@ -1,10 +1,12 @@
 ﻿using Application.Interfaces.V1;
+using Domain.Entities.AppSettings;
 using Domain.Entities.Common;
 using Domain.Entities.Modals;
 using Domain.Entities.Request;
 using Domain.Entities.Response;
 using Domain.Enums;
 using Domain.Records;
+using Microsoft.Extensions.Options;
 using MiniMapper;
 using System;
 using System.Collections.Generic;
@@ -17,7 +19,13 @@ namespace Application.Services
     public class SapPoFetcher : ISapPoFetcher
     {
         private readonly IAPICall _api;
-        public SapPoFetcher(IAPICall api) => _api = api;
+        private readonly PoTotalQtyMode _qtyMode;
+
+        public SapPoFetcher(IAPICall api, IOptions<SapPoOptions>? options = null)
+        {
+            _api = api;
+            _qtyMode = options?.Value.PoTotalQtyMode ?? PoTotalQtyMode.FirstRow;   // N17: appsettings "Sap:PoTotalQtyMode"
+        }
 
         public async Task<SapPoFetchResult> FetchAsync(string poNumber, IProgress<int>? progress = null)
         {
@@ -59,7 +67,7 @@ namespace Application.Services
             POHeader po;
             try
             {
-                po = new POHeader { PoNumber = poNumber }.MapToHeader(poDetails);
+                po = new POHeader { PoNumber = poNumber }.MapToHeader(poDetails, _qtyMode);
             }
             catch (Exception ex) when (ex is FormatException || ex is OverflowException || ex is InvalidCastException)
             {
@@ -149,6 +157,8 @@ namespace Application.Services
                 return new PoSyncResult(false,
                     $"PO {currentPO.PoNumber} is not yet saved in QPS, so it cannot be synchronized.", PoSyncIssue.NotSavedInQps);
 
+            // N7 (decided 23-Nov-2026): the ORIGINAL PO governs quantity, fabric and the other details, also after the
+            // request was linked to another PO (LinkPoNumber). The link is for display and search only.
             var fetchResult = await _fetcher.FetchAsync(currentPO.PoNumber, progress);
             if (!fetchResult.Success)
                 return new PoSyncResult(false, fetchResult.ErrorMessage ?? "PO not found in SAP.", fetchResult.Issue);
@@ -173,6 +183,10 @@ namespace Application.Services
             fetchedPO.CreatedBy = userId;
             fetchedPO.Id = currentPO.Id;
 
+            // N9: compare the line items too. The screens usually hold only the header, so load the QPS lines when
+            // they are missing; if that fails the lines are not compared and only the header decides.
+            if (currentPO.Details.Count == 0 && fetchedPO.Details.Count > 0)
+                currentPO.Details = await LoadQpsLinesAsync(currentPO.PoNumber);
             var changedFields = currentPO.GetChangedFields(fetchedPO);
 
             if (!forceSync && changedFields.Count == 0)
@@ -190,8 +204,9 @@ namespace Application.Services
             currentPO.UpdateNewValues(fetchedPO);
             progress?.Report(100);
 
-            var message = forceSync || changedFields.Count == 0
-                ? "PO details synchronized successfully."
+            // Forced sync (Update / Link PO dialog) lists the changes too
+            var message = changedFields.Count == 0
+                ? "PO details synchronized successfully. No differences from SAP were found."
                 : $"PO details synchronized successfully. Changed: {string.Join(", ", changedFields)}.";
 
             bool hasQtyWarning = !string.IsNullOrWhiteSpace(res.responseMessage) &&
@@ -201,6 +216,26 @@ namespace Application.Services
                 return new PoSyncResult(true, $"{message}{Environment.NewLine}{res.responseMessage}", PoSyncIssue.QtyWarning);
 
             return new PoSyncResult(true, message);
+        }
+
+        private async Task<List<PODetails>> LoadQpsLinesAsync(string poNumber)
+        {
+            try
+            {
+                var req = new SelectListReq { Id = 0, Cmd = CmdNames.Get_PO_Details, StrField = poNumber };
+                var res = await _api.CallingAPI<POResponse, SelectListReq>(AllApiNames.GET_PO_DETAILS, req);
+                if (res is null || res.responseCode != 0) return new();
+                return res.PODetails.Select(d => new PODetails
+                {
+                    Id = d.PO_DETAILS_ID, LineItem = d.LINE_ITEM, Article = d.ARTICLE, ArticleDesc = d.ARTICLE_DESC,
+                    PrepackQty = d.PREPACK_QTY, PurchaseTotQty = d.PURCHASE_TOT_QTY, PrepackQtyEaches = d.PREPACK_QTY_EACHES,
+                    Eaches = d.EACHES, MRP = d.MRP, AtTyp = d.ATTYP,
+                }).ToList();
+            }
+            catch
+            {
+                return new();   // lines are optional for the comparison
+            }
         }
     }
 

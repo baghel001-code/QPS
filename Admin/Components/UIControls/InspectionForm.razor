@@ -835,7 +835,8 @@
             <MudButton OnClick="Save" Color="MudBlazor.Color.Secondary" Variant="Variant.Filled" Disabled="@isSubmitting">Save</MudButton>
             <MudButton OnClick="Submit" Color="MudBlazor.Color.Success" Variant="Variant.Filled" Disabled="@isSubmitting">Submit</MudButton>
         }
-        @if (_CurrentUser.IsQAAdmin || _CurrentUser.IsQAM)
+        @* Reset re-opens a completed report: QA Admin (1008) only, also enforced in SP_SAVE_INSPECTION *@
+        @if (_CurrentUser.IsQAAdmin)
         {
             <MudButton OnClick="Reset" Color="MudBlazor.Color.Secondary" Variant="Variant.Filled" Disabled="@isSubmitting">Reset</MudButton>
         }

@@ -749,6 +749,26 @@ namespace Infrastructure.Services.V1
             return Res;
         }
 
+        private static DataTable PoDetailsTable(IEnumerable<PODetails> details, int userId)
+        {
+            var t = new DataTable();
+            t.Columns.Add("PO_DETAILS_ID", typeof(int));
+            t.Columns.Add("LINE_ITEM", typeof(string));
+            t.Columns.Add("ARTICLE", typeof(string));
+            t.Columns.Add("ARTICLE_DESC", typeof(string));
+            t.Columns.Add("PREPACK_QTY", typeof(decimal));
+            t.Columns.Add("PURCHASE_TOT_QTY", typeof(decimal));
+            t.Columns.Add("PREPACK_QTY_EACHES", typeof(decimal));
+            t.Columns.Add("EACHES", typeof(decimal));
+            t.Columns.Add("MRP", typeof(decimal));
+            t.Columns.Add("ATTYP", typeof(string));
+            t.Columns.Add("CREATED_BY", typeof(int));
+            t.Columns.Add("UPDATED_BY", typeof(int));
+            foreach (var d in details ?? [])
+                t.Rows.Add(d.Id, d.LineItem, d.Article, d.ArticleDesc, d.PrepackQty, d.PurchaseTotQty, d.PrepackQtyEaches, d.Eaches, d.MRP, d.AtTyp, userId, userId);
+            return t;
+        }
+
         public async Task<GenRes> SyncPOdetailsService(POHeader req)
         {
             var Res = new GenRes();
@@ -774,6 +794,8 @@ namespace Infrastructure.Services.V1
             headerParams.Add("@FIT", req.FIT);
             headerParams.Add("@VENDOR_NAME", req.VendorName);   // NEW
             headerParams.Add("@BUYER_NAME", req.BuyerName);     // NEW
+            // N9: SAP line items (MERGE on POID + LINE_ITEM in the procedure); an empty table syncs the header only
+            headerParams.Add("@PO_DETAILS", PoDetailsTable(req.Details, req.CreatedBy).AsTableValuedParameter("dbo.TVP_PODETAIL"));
 
             // Output parameters
             headerParams.Add("@ERROR_CODE", dbType: DbType.Int32, direction: ParameterDirection.Output);

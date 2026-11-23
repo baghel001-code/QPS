@@ -1403,6 +1403,10 @@ CREATE TABLE [dbo].[INSPECTIONS](
 	[SELECTED_BAG_CARTONS_NO] [varchar](100) NULL,
 	[OTHER_ABORTIVE_REASON] [varchar](max) NULL,
 	[LAST_UPDATE_DATE_BY_ADMIN] [datetime] NULL,
+	[PO_TOTAL_QTY_AT_COMPLETION] [decimal](18, 3) NULL,
+	[PO_FABRIC_AT_COMPLETION] [varchar](255) NULL,
+	[PO_COLOR_AT_COMPLETION] [varchar](100) NULL,
+	[PO_MRP_AT_COMPLETION] [decimal](18, 2) NULL,
  CONSTRAINT [PK_INSPECTIONS] PRIMARY KEY CLUSTERED 
 (
 	[INSPECT_ID] ASC
@@ -4494,18 +4498,18 @@ BEGIN
 				B.VENDOR_NAME,
 				E.ADDRESS_LINE1 +', '+ E.CITY +', '+ E.REGION_DESCRIPTION +', '+ E.PINCODE+ ', '+RM.REGION AS LOCATION,
 				E.ADDRESS_LINE1 +', '+ E.CITY +', '+ E.REGION_DESCRIPTION +', '+ E.PINCODE AS ADDRESS,
-				CAST(B.TOTAL_QTY AS FLOAT) AS PO_QTY,
+				CAST(COALESCE(I.PO_TOTAL_QTY_AT_COMPLETION, B.TOTAL_QTY) AS FLOAT) AS PO_QTY,   -- E12: values frozen at completion
 				
 				B.MC_TEXT AS DESCRIPTION,
 				B.FIT AS PO_FIT,
-				B.MRP,
+				COALESCE(I.PO_MRP_AT_COMPLETION, B.MRP) AS MRP,
 
 				CAST(A.OFFERED_QTY AS FLOAT) AS OFFERED_QTY,
 				CAST(I.OFFERED_QTY AS FLOAT) AS SHIP_QTY,
 
 				B.CATEGORY,
 				CASE WHEN ISNULL(B.BRAND_ID2,'') <> '' AND ISNULL(B.BRAND_ID,'') <> '' THEN B.BRAND_ID2 + ' [ ' + B.BRAND_ID + ' ]' ELSE '-' END AS BRAND_LABEL,
-				B.COLOR,
+				COALESCE(I.PO_COLOR_AT_COMPLETION, B.COLOR) AS COLOR,
 				PD.ARTICLES ,
 			   
 			    I.GPT_NO AS GPT_NO,
@@ -8480,6 +8484,29 @@ BEGIN
  
         SELECT @CIROFFEREDQTY = OFFERED_QTY, @POID = POID
         FROM INSPECTION_REQUESTS WHERE INSP_ID = @INSPECTION_ID;
+        /* Only QA Admin (1008) may re-open a completed report (PO Sync Case Analysis, open point 7) */
+        IF (@IS_RESET_BY_ADMIN = 1 AND ISNULL(@ROLEID, 0) <> 1008)
+        BEGIN
+            SET @ERROR_CODE = 50005;
+            SET @ERROR_MESSAGE = 'Only QA Admin can reset a completed inspection.';
+            RETURN;
+        END
+        /* N11: one quantity-changing save per PO at a time. The transaction and the PO lock start BEFORE the
+           quantity validation, so two saves for the same PO cannot both pass it. SP_SAVE_PO takes the same lock. */
+        DECLARE @LOCK_RESOURCE NVARCHAR(255) = CONCAT(N'QPS_PO_QTY_', ISNULL(@POID, 0)), @LOCK_RESULT INT;
+        BEGIN TRAN;
+        EXEC @LOCK_RESULT = sp_getapplock @Resource = @LOCK_RESOURCE, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 10000;
+        IF (@LOCK_RESULT < 0)
+        BEGIN
+            ROLLBACK TRAN;
+            SET @ERROR_CODE = 50006;
+            SET @ERROR_MESSAGE = 'Another save for this PO is in progress. Please try again in a moment.';
+            RETURN;
+        END
+        /* E12: PO values as they are when the report is completed (first completion, or completion after a reset) */
+        DECLARE @TAKE_SNAPSHOT BIT = IIF(@IS_RESET_BY_ADMIN = 0 AND @IS_COMPLETE = 1 AND ISNULL(@IsAllreadyComplete, 0) = 0, 1, 0),
+                @SNAP_QTY DECIMAL(18,3), @SNAP_FABRIC VARCHAR(255), @SNAP_COLOR VARCHAR(100), @SNAP_MRP DECIMAL(18,2);
+        SELECT @SNAP_QTY = TOTAL_QTY, @SNAP_FABRIC = FABRIC, @SNAP_COLOR = COLOR, @SNAP_MRP = MRP FROM POHEADER WHERE POID = @POID;
  
         /* Admin reset only re-opens the report, so no data validation is needed (E4, E17) */
         IF (@IS_RESET_BY_ADMIN = 0)
@@ -8488,6 +8515,7 @@ BEGIN
             BEGIN
                 SET @ERROR_CODE = 50000;
                 SET @ERROR_MESSAGE = 'Ship quantity is zero.';
+                ROLLBACK TRAN;
                 RETURN;
             END
  
@@ -8495,6 +8523,7 @@ BEGIN
             BEGIN
                 SET @ERROR_CODE = 50001;
                 SET @ERROR_MESSAGE = 'Please enter the travelling amount.';
+                ROLLBACK TRAN;
                 RETURN;
             END
  
@@ -8503,6 +8532,7 @@ BEGIN
             BEGIN
                 SET @ERROR_CODE = 50002;
                 SET @ERROR_MESSAGE = 'Attachment is required.';
+                ROLLBACK TRAN;
                 RETURN;
             END
  
@@ -8548,6 +8578,7 @@ BEGIN
                                    ') for PO ', @PONUMBER, '. PO qty ', CAST(@TOTAL_QTY AS INT), ' +10% = ', @QTY_LIMIT,
                                    ', already passed ', @PASSED_QTY, ', other open requests ', @IROFFEREDQTY, '.')
                     END;
+                ROLLBACK TRAN;
                 RETURN;
             END
  
@@ -8573,6 +8604,7 @@ BEGIN
             BEGIN
                 SET @ERROR_CODE = 50001;
                 SET @ERROR_MESSAGE = 'PPS Expiry Date must be 6 months greater than Release Date';
+                ROLLBACK TRAN;
                 RETURN;
             END
  
@@ -8586,15 +8618,12 @@ BEGIN
             BEGIN
                 SET @ERROR_CODE = 50003;
                 SET @ERROR_MESSAGE = 'Defects are mandatory when inspection result is FAIL';
+                ROLLBACK TRAN;
                 RETURN;
             END
         END
  
-        /* ===== END OF REPLACED BLOCK - "BEGIN TRAN;" follows unchanged ===== */
-
-
-
-        BEGIN TRAN;
+        /* ===== END OF REPLACED BLOCK - the transaction is already open (see N11 above) ===== */
 
 		IF(@IS_RESET_BY_ADMIN=1)
 			BEGIN
@@ -8635,7 +8664,8 @@ BEGIN
 							CONFORMITY_SIZE_STATUS,CONFORMITY_PREPACK,CONFORMITY_PREPACK_STATUS,EMBROIDERY_PF,ACCESSORIES_PF,
 							BARCODE_PF,NO_PLASTIC_PF,BOGO_PF,THREAD_YN,BUTTON_YN,ZIPPER_YN,INTERLINING_YN,ELASTIC_YN,MEASUREMENT_SAMPLE_QTY,
 							ZIPPER_RPT_NO,ZIPPER_STATUS,ZIPPER_APPROVED_BY,	ZIPPER_APPROVED_DATE,FIT,COMM_APPROVAL_DOC,DEBIT_AMOUNT,ADMIN_REMARK,
-							ABORTIVE_REASON_IDS,OTHER_ABORTIVE_REASON, AMT_TRAVELLING, SELECTED_BAG_CARTONS_NO
+							ABORTIVE_REASON_IDS,OTHER_ABORTIVE_REASON, AMT_TRAVELLING, SELECTED_BAG_CARTONS_NO,
+							PO_TOTAL_QTY_AT_COMPLETION, PO_FABRIC_AT_COMPLETION, PO_COLOR_AT_COMPLETION, PO_MRP_AT_COMPLETION
 						)
 						VALUES
 						(
@@ -8657,7 +8687,8 @@ BEGIN
 							@CONFORMITY_SIZE_STATUS,@CONFORMITY_PREPACK,@CONFORMITY_PREPACK_STATUS,@EMBROIDERY_PF,@ACCESSORIES_PF,
 							@BARCODE_PF,@NO_PLASTIC_PF,@BOGO_PF,@THREAD_YN,@BUTTON_YN,@ZIPPER_YN,@INTERLINING_YN,@ELASTIC_YN,@MEASUREMENT_SAMPLE_QTY,
 							@ZIPPER_RPT_NO,@ZIPPER_STATUS,@ZIPPER_APPROVED_BY,@ZIPPER_APPROVED_DATE,@FIT,@COMM_APPROVAL_DOC,@DEBIT_AMOUNT,@ADMIN_REMARK,
-							@ABORTIVE_REASON_IDS,@OTHER_ABORTIVE_REASON, @AMT_TRAVELLING,@SELECTED_BAG_CARTONS_NO
+							@ABORTIVE_REASON_IDS,@OTHER_ABORTIVE_REASON, @AMT_TRAVELLING,@SELECTED_BAG_CARTONS_NO,
+							IIF(@TAKE_SNAPSHOT = 1, @SNAP_QTY, NULL), IIF(@TAKE_SNAPSHOT = 1, @SNAP_FABRIC, NULL), IIF(@TAKE_SNAPSHOT = 1, @SNAP_COLOR, NULL), IIF(@TAKE_SNAPSHOT = 1, @SNAP_MRP, NULL)
 						);
 						
 						SET @OUT_INSPECT_ID = SCOPE_IDENTITY();
@@ -8770,7 +8801,11 @@ BEGIN
 					                ABORTIVE_REASON_IDS=@ABORTIVE_REASON_IDS,
 					                OTHER_ABORTIVE_REASON=@OTHER_ABORTIVE_REASON,
 					                AMT_TRAVELLING=@AMT_TRAVELLING,
-					                SELECTED_BAG_CARTONS_NO=@SELECTED_BAG_CARTONS_NO
+					                SELECTED_BAG_CARTONS_NO=@SELECTED_BAG_CARTONS_NO,
+					                PO_TOTAL_QTY_AT_COMPLETION = IIF(@TAKE_SNAPSHOT = 1, @SNAP_QTY,    PO_TOTAL_QTY_AT_COMPLETION),
+					                PO_FABRIC_AT_COMPLETION    = IIF(@TAKE_SNAPSHOT = 1, @SNAP_FABRIC, PO_FABRIC_AT_COMPLETION),
+					                PO_COLOR_AT_COMPLETION     = IIF(@TAKE_SNAPSHOT = 1, @SNAP_COLOR,  PO_COLOR_AT_COMPLETION),
+					                PO_MRP_AT_COMPLETION       = IIF(@TAKE_SNAPSHOT = 1, @SNAP_MRP,    PO_MRP_AT_COMPLETION)
 					            WHERE INSPECT_ID = @INSPECT_ID;
 					   
 					            SET @OUT_INSPECT_ID = @INSPECT_ID;
@@ -8925,6 +8960,16 @@ BEGIN
 		-- (with NULL, "!=" is never true, so the quantity sums ignored every row and the checks were skipped).
 		SET @INSP_ID = ISNULL(@INSP_ID, 0);
 		SET @POID    = ISNULL(@POID, 0);
+
+		-- N11: one quantity-changing save per PO at a time (same lock as SP_SAVE_INSPECTION). The transaction is
+		-- already open, so the quantity validation below runs under the lock. A PO that is new to QPS is locked
+		-- by its number, so two vendors cannot create it twice at the same moment.
+		DECLARE @LOCK_RESOURCE NVARCHAR(255) =
+			IIF(@POID > 0, CONCAT(N'QPS_PO_QTY_', @POID), CONCAT(N'QPS_PO_NEW_', LTRIM(RTRIM(@PO_NUMBER)))),
+			@LOCK_RESULT INT;
+		EXEC @LOCK_RESULT = sp_getapplock @Resource = @LOCK_RESOURCE, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 10000;
+		IF (@LOCK_RESULT < 0)
+			RAISERROR('Another request for PO %s is being saved. Please try again in a moment.', 16, 1, @PO_NUMBER);
 
 		-- CHANGE 1: existing PO -> validate against the quantity stored in QPS (last SAP sync),
 		-- never the value sent by the screen (E5, N10).
@@ -10120,6 +10165,7 @@ CREATE PROCEDURE [dbo].[SP_UPDATE_POHEADER]
     @FIT VARCHAR(250) = NULL,
     @VENDOR_NAME VARCHAR(100) = NULL,              -- NEW (E13)
     @BUYER_NAME VARCHAR(50) = NULL,                -- NEW (E13)
+    @PO_DETAILS dbo.TVP_PODETAIL READONLY,         -- N9: SAP line items; leave empty to sync the header only
     @USER_ID INT,
     @RECORD_ID INT OUTPUT,
     @ERROR_CODE INT = 0 OUTPUT,
@@ -10248,6 +10294,56 @@ BEGIN
  
         IF (@@ROWCOUNT = 0)
             RAISERROR('PO %s was not updated. Please retry.', 16, 1, @PO_NUMBER);
+
+        /* 7. Line items (N9): MERGE on (POID, LINE_ITEM) so PO_DETAILS_ID stays stable. Only when SAP lines were sent. */
+        IF EXISTS (SELECT 1 FROM @PO_DETAILS)
+        BEGIN
+            IF EXISTS (SELECT 1 FROM @PO_DETAILS WHERE ISNULL(LTRIM(RTRIM(LINE_ITEM)), '') = '')
+               OR EXISTS (SELECT LTRIM(RTRIM(LINE_ITEM)) FROM @PO_DETAILS GROUP BY LTRIM(RTRIM(LINE_ITEM)) HAVING COUNT(*) > 1)
+            BEGIN
+                -- the header is still updated; the lines are left as they are
+                SET @WARNING_MESSAGE = CONCAT(@WARNING_MESSAGE + ' ',
+                    'WARNING: SAP returned blank or repeated line item numbers, so the PO lines were not updated.');
+            END
+            ELSE
+            BEGIN
+                DECLARE @LINE_ACTIONS TABLE (ACT NVARCHAR(10));
+                WITH T AS (SELECT * FROM PODETAIL WHERE POID = @POID)
+                MERGE T
+                USING (
+                    SELECT LTRIM(RTRIM(LINE_ITEM)) AS LINE_ITEM, ISNULL(ARTICLE, '') AS ARTICLE, ARTICLE_DESC,
+                           ISNULL(PREPACK_QTY, 0) AS PREPACK_QTY, ISNULL(PURCHASE_TOT_QTY, 0) AS PURCHASE_TOT_QTY,
+                           ISNULL(PREPACK_QTY_EACHES, 0) AS PREPACK_QTY_EACHES, ISNULL(EACHES, 0) AS EACHES, MRP, ATTYP
+                    FROM @PO_DETAILS
+                ) AS S
+                ON T.LINE_ITEM = S.LINE_ITEM
+                WHEN MATCHED AND (
+                       T.ARTICLE <> S.ARTICLE
+                    OR ISNULL(T.ARTICLE_DESC, '') <> ISNULL(S.ARTICLE_DESC, '')
+                    OR ISNULL(T.PREPACK_QTY, 0) <> S.PREPACK_QTY
+                    OR ISNULL(T.PURCHASE_TOT_QTY, 0) <> S.PURCHASE_TOT_QTY
+                    OR ISNULL(T.PREPACK_QTY_EACHES, 0) <> S.PREPACK_QTY_EACHES
+                    OR ISNULL(T.EACHES, 0) <> S.EACHES
+                    OR ISNULL(T.MRP, 0) <> ISNULL(S.MRP, 0)
+                    OR ISNULL(T.ATTYP, '') <> ISNULL(S.ATTYP, '')) THEN
+                    UPDATE SET ARTICLE = S.ARTICLE, ARTICLE_DESC = S.ARTICLE_DESC, PREPACK_QTY = S.PREPACK_QTY,
+                               PURCHASE_TOT_QTY = S.PURCHASE_TOT_QTY, PREPACK_QTY_EACHES = S.PREPACK_QTY_EACHES,
+                               EACHES = S.EACHES, MRP = S.MRP, ATTYP = S.ATTYP,
+                               UPDATED_BY = @USER_ID, LAST_UPDATED_ON = GETDATE()
+                WHEN NOT MATCHED BY TARGET THEN
+                    INSERT (POID, LINE_ITEM, ARTICLE, ARTICLE_DESC, PREPACK_QTY, PURCHASE_TOT_QTY, PREPACK_QTY_EACHES, EACHES, MRP, ATTYP, CREATED_ON, CREATED_BY)
+                    VALUES (@POID, S.LINE_ITEM, S.ARTICLE, S.ARTICLE_DESC, S.PREPACK_QTY, S.PURCHASE_TOT_QTY, S.PREPACK_QTY_EACHES, S.EACHES, S.MRP, S.ATTYP, GETDATE(), @USER_ID)
+                WHEN NOT MATCHED BY SOURCE THEN
+                    DELETE    -- line removed from the PO in SAP
+                OUTPUT $action INTO @LINE_ACTIONS (ACT);
+
+                IF EXISTS (SELECT 1 FROM @LINE_ACTIONS)
+                    SET @LOG_NEW_VALUE = CONCAT(@LOG_NEW_VALUE,
+                        ', PODETAIL: ', (SELECT COUNT(*) FROM @LINE_ACTIONS WHERE ACT = 'UPDATE'), ' updated, ',
+                        (SELECT COUNT(*) FROM @LINE_ACTIONS WHERE ACT = 'INSERT'), ' added, ',
+                        (SELECT COUNT(*) FROM @LINE_ACTIONS WHERE ACT = 'DELETE'), ' removed');
+            END
+        END
  
         INSERT INTO [dbo].[SPTRACE]([SP_OLDVALUES], [SP_NEWVALUES]) VALUES (@LOG_OLD_VALUE, @LOG_NEW_VALUE);
  
@@ -10263,7 +10359,6 @@ BEGIN
         SET @WARNING_MESSAGE = NULL;
     END CATCH
 END
-
 GO
 /****** Object:  StoredProcedure [dbo].[usp_Inspection_Search]    Script Date: 23-11-2026 14:30:58 ******/
 SET ANSI_NULLS ON

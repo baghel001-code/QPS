@@ -8,7 +8,7 @@ Scripts to build a QPS database with test data, for the SQL Server tests and for
 | `00-test-prerequisites.sql` | Stand-ins for the two things `qps.sql` needs from outside the QPS database: an empty `APPS_BSR` table, and the linked server `[192.168.0.43]` with an `OMS.dbo.TBL_ARTICLE_MST` table (pointing back at the same server). Needs sysadmin. |
 | `../qps.sql` | The schema (tables, procedures, views, triggers). |
 | `../migrations/*.sql` | Changes to apply to existing databases (see below); the tests apply them too. |
-| `01-seed-test-data.sql` | Invented test data: lookup masters, 14 roles, menus, 5 employees, 3 vendors with addresses, a PO hierarchy, 2 POs, 2 inspection requests, 1 completed inspection with defects, e-mail list, API master rows. The IDs are listed at the top of the file. Seeded vendors sign in with the password `Qps@Test2026`. |
+| `01-seed-test-data.sql` | Invented test data: lookup masters, 14 roles, menus, 6 employees (incl. a QA Admin), 3 vendors with addresses, a PO hierarchy, 4 POs, 4 inspection requests, 2 completed inspections (one with defects), e-mail list, API master rows. The IDs are listed at the top of the file. Seeded vendors sign in with the password `Qps@Test2026`. |
 
 ## Build a local database by hand
 
@@ -46,9 +46,11 @@ once per database:
 ```bash
 sqlcmd -S <server> -d VMM_QPS -b -i Database/migrations/2026-11-23-user-security-stamp.sql
 sqlcmd -S <server> -d VMM_QPS -b -i Database/migrations/2026-11-23-remove-reset-token-debug-log.sql
+sqlcmd -S <server> -d VMM_QPS -b -i Database/migrations/2026-11-23-po-sync-phase2.sql
 ```
 
 | Migration | Fixes |
 |---|---|
 | `2026-11-23-user-security-stamp.sql` | `auth.PRO_LOGIN_RECORD_FAILED_COUNT` and `auth.PRO_LOGIN_LOCKOUT` inserted `auth.UserSecurity` without `SecurityStamp` (NOT NULL), so the first wrong password or lockout of a user without a security row failed with a SQL error. |
 | `2026-11-23-remove-reset-token-debug-log.sql` | `auth.PRO_PASSWORD_RESET_TOKEN_ISSUE`, `_FIND` and `_REDEEM` wrote every reset-token hash (and user code) into the debug table `ProcParaTest`. Recreates them without it and deletes the rows already logged (`ColumnValues LIKE '%Token :%'`). |
+| `2026-11-23-po-sync-phase2.sql` | PO Sync Case Analysis: per-PO lock in `SP_SAVE_PO` / `SP_SAVE_INSPECTION` (N11); line-item sync in `SP_UPDATE_POHEADER` (N9); PO quantity, fabric, colour and MRP stored on `INSPECTIONS` at completion and used by the PDF report, existing completed reports frozen with today's PO values (E12); Reset by Admin only for QA Admin 1008. |

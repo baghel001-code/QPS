@@ -11,12 +11,15 @@
     Fixed IDs (the tests rely on them):
       Employees (USER_MASTER)  ID 1 E1001 admin (Administrator)   ID 2 E1002 QA      ID 3 E1003 QAM
                                ID 4 E1004 buyer (Buyer)           ID 5 E1005 resigned / inactive
+                               ID 6 E1006 QA Admin (1008)
       Vendors (VENDORS_MASTER) ID 1 V0001 Acme Textiles (active)  ID 2 V0002 Blue Loom (must change password)
                                ID 3 V0003 Old Mills (inactive)
       Vendor test password     Qps@Test2026   (PBKDF2 hash below, same format as Application.Services.PasswordHasher)
       POs                      POID 1 4500000001 (V0001)          POID 2 4500000002 (V0002)
+                               POID 3 4500000003 (V0001, qty 500) POID 4 4500000004 (V0002, qty 300)
       Inspection requests      INSP_ID 1 on PO 1 (status 7 completed)   INSP_ID 2 on PO 2 (status 1 new)
-      Inspections              INSPECT_ID 1 for request 1 (complete, Pass)
+      Requests 3 / 4           INSP_ID 3 on PO 3 (status 7)       INSP_ID 4 on PO 4 (status 6, no inspection yet)
+      Inspections              INSPECT_ID 1 for request 1, INSPECT_ID 2 for request 3 (both complete, Pass, PO values frozen)
 */
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
@@ -94,7 +97,8 @@ INSERT INTO USER_MASTER (ID, EMP_CODE, EMP_NAME, EMP_LOCATION, EMP_LOC_CODE, EMP
  (2, 'E1002', 'Ravi QA',      'Delhi DC',    'DC1', 'Quality', 'Inspector', '9000000002', 'ravi.qa@example.com',      0, 1, 1006, 1, '1',   1),
  (3, 'E1003', 'Meera QAM',    'Delhi DC',    'DC1', 'Quality', 'Manager',   '9000000003', 'meera.qam@example.com',    0, 1, 1007, 1, '1,2', 1),
  (4, 'E1004', 'Karan Buyer',  'Head Office', 'HO', 'Buying',  'Buyer',     '9000000004', 'karan.buyer@example.com',  0, 1, 2,    2, '2',   1),
- (5, 'E1005', 'Old Employee', 'Head Office', 'HO', 'Buying',  'Buyer',     '9000000005', 'old.employee@example.com', 1, 0, 2,    2, '2',   1);
+ (5, 'E1005', 'Old Employee', 'Head Office', 'HO', 'Buying',  'Buyer',     '9000000005', 'old.employee@example.com', 1, 0, 2,    2, '2',   1),
+ (6, 'E1006', 'Farah QA Admin', 'Head Office', 'HO', 'Quality', 'QA Admin', '9000000006', 'farah.qaadmin@example.com', 0, 1, 1008, 1, '1,2', 1);
 SET IDENTITY_INSERT USER_MASTER OFF;
 
 INSERT INTO USER_ROLE_DETAILS (USER_ID, MENU_ID, PERMISSION) VALUES
@@ -137,28 +141,37 @@ SET IDENTITY_INSERT POHEADER ON;
 INSERT INTO POHEADER (POID, PO_NUMBER, VENDOR_CODE, VENDOR_NAME, FABRIC, COLOR, TOTAL_QTY, CREATED_ON, CREATED_BY, APPARELS, CATEGORY,
                       BUYER_NAME, BUYER_ID, MC, MC_TEXT, MRP, BRAND_ID, FIT) VALUES
  (1, '4500000001', 'V0001', 'Acme Textiles', 'Cotton', 'Blue', 1200, @Now, 1, 'Apparel', 'Mens Shirts', 'Karan Buyer', 'E1004', 'MC101', 'Mens Casual Shirt', 799.00, 'BRAND-A', 'Slim'),
- (2, '4500000002', 'V0002', 'Blue Loom',     'Denim',  'Indigo', 800, @Now, 1, 'Apparel', 'Mens Jeans',  'Karan Buyer', 'E1004', 'MC202', 'Mens Denim',        1299.00, 'BRAND-B', 'Regular');
+ (2, '4500000002', 'V0002', 'Blue Loom',     'Denim',  'Indigo', 800, @Now, 1, 'Apparel', 'Mens Jeans',  'Karan Buyer', 'E1004', 'MC202', 'Mens Denim',        1299.00, 'BRAND-B', 'Regular'),
+ (3, '4500000003', 'V0001', 'Acme Textiles', 'Poplin', 'White',  500, @Now, 1, 'Apparel', 'Mens Shirts', 'Karan Buyer', 'E1004', 'MC101', 'Mens Formal Shirt',  999.00, 'BRAND-A', 'Slim'),
+ (4, '4500000004', 'V0002', 'Blue Loom',     'Twill',  'Khaki',  300, @Now, 1, 'Apparel', 'Mens Chinos', 'Karan Buyer', 'E1004', 'MC203', 'Mens Chinos',        1199.00, 'BRAND-B', 'Regular');
 SET IDENTITY_INSERT POHEADER OFF;
 
 INSERT INTO PODETAIL (POID, LINE_ITEM, ARTICLE, ARTICLE_DESC, PREPACK_QTY, PURCHASE_TOT_QTY, EACHES, CREATED_ON, CREATED_BY, MRP, ATTYP) VALUES
  (1, '10', 'ART-1001-M', 'Shirt blue M', 0, 600, 600, @Now, 1, 799.00, '00'),
  (1, '20', 'ART-1001-L', 'Shirt blue L', 0, 600, 600, @Now, 1, 799.00, '00'),
- (2, '10', 'ART-2001-32', 'Jeans indigo 32', 0, 800, 800, @Now, 1, 1299.00, '00');
+ (2, '10', 'ART-2001-32', 'Jeans indigo 32', 0, 800, 800, @Now, 1, 1299.00, '00'),
+ (3, '100', 'ART-3001', 'Formal shirt white', 0, 500, 500, @Now, 1, 999.00, '02'),
+ (4, '100', 'ART-4001', 'Chinos khaki', 0, 300, 300, @Now, 1, 1199.00, '02');
 
 SET IDENTITY_INSERT INSPECTION_REQUESTS ON;
 INSERT INTO INSPECTION_REQUESTS (INSP_ID, POID, OFFERED_QTY, DATE_OF_INSPECTION, ADDRESS_ID, CREATED_ON, CREATED_BY, REGION_ID, QA_ASSIGNED_DOI,
                                  INSPECTOR_EMP_CODE, IS_DATE_ASSIGNED_BY_QA, IS_INSPECTOR_ASSIGNED, STATUS_CODE, INSPECTION_TYPE_ID, INSPECTION_NO, IS_QC_AT_DC) VALUES
  (1, 1, 1200, '2026-11-05', 1, @Now, 1, 1, '2026-11-05', 'E1002', 1, 1, 7, 2, 'INS-2026-0001', 0),   -- 7 = completed
- (2, 2,  800, '2026-11-20', 3, @Now, 2, 2, NULL,         NULL,    0, 0, 1, 1, 'INS-2026-0002', 0);
+ (2, 2,  800, '2026-11-20', 3, @Now, 2, 2, NULL,         NULL,    0, 0, 1, 1, 'INS-2026-0002', 0),
+ (3, 3,  500, '2026-11-06', 1, @Now, 1, 1, '2026-11-06', 'E1002', 1, 1, 7, 2, 'INS-2026-0003', 0),   -- completed: reset / lock tests
+ (4, 4,  300, '2026-11-21', 3, @Now, 2, 2, '2026-11-21', 'E1002', 1, 1, 6, 2, 'INS-2026-0004', 0);   -- inspector assigned: completion test
 SET IDENTITY_INSERT INSPECTION_REQUESTS OFF;
 
 SET IDENTITY_INSERT INSPECTIONS ON;
 INSERT INTO INSPECTIONS (INSPECT_ID, INSPECTION_ID, INSPECTOR_CODE, OFFERED_QTY, GPT_NO, GPT_STATUS, NO_OF_BAGS_CARTONS_QTY, NO_OF_BAGS_CARTONS_UNIT,
                          PACKING_STATUS, INLINE_DONE, PACKING_LIST, FIBER_CONTENT_ON_PO, FIBER_CONTENT_ON_TEST_REPORT, FIBER_CONTENT_ON_WC,
                          GSM_ON_PO, GSM_ON_TEST_REPORT, MEASUREMENT_SAMPLE_SIZE, NO_OF_CHECK, NO_OF_CHECK_UNIT, AQL_ID, DEFECTS_STATUS,
-                         INSPECTION_RESULT, NAME_OF_FACTORY_REPRESENTATIVE, IS_COMPLETE, CREATED_BY, CREATED_DATE, DATE_OF_COMPLETION, COLOR_CODE) VALUES
+                         INSPECTION_RESULT, NAME_OF_FACTORY_REPRESENTATIVE, IS_COMPLETE, CREATED_BY, CREATED_DATE, DATE_OF_COMPLETION, COLOR_CODE,
+                         PO_TOTAL_QTY_AT_COMPLETION, PO_FABRIC_AT_COMPLETION, PO_COLOR_AT_COMPLETION, PO_MRP_AT_COMPLETION) VALUES
  (1, 1, 'E1002', 1200, 'GPT-0001', 1, 40, 1, 1, 1, 1, '100% Cotton', '100% Cotton', '100% Cotton', '140', '140', 1, 80, 3, 9, 1,
-  1, 'Sunil', 1, 2, '2026-11-05T15:00:00', '2026-11-05T16:00:00', 3);
+  1, 'Sunil', 1, 2, '2026-11-05T15:00:00', '2026-11-05T16:00:00', 3, 1200, 'Cotton', 'Blue', 799.00),
+ (2, 3, 'E1002',  500, 'GPT-0003', 1, 20, 1, 1, 1, 1, '100% Cotton', '100% Cotton', '100% Cotton', '120', '120', 1, 50, 3, 8, 1,
+  1, 'Sunil', 1, 2, '2026-11-06T15:00:00', '2026-11-06T16:00:00', 3, 500, 'Poplin', 'White', 999.00);
 SET IDENTITY_INSERT INSPECTIONS OFF;
 
 INSERT INTO INSPECTION_DEFECTS (INSPECTION_ID, DEFECTS, DIMENSION, MAJOR, MINOR, CREATED_BY, CREATED_DATE) VALUES
